@@ -1,0 +1,24 @@
+# Python cache and metadata
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.ipynb_checkpoints/
+*.DS_Store
+
+# Logs and environment
+*.log
+.env
+
+# Model weights and intermediate files
+*.pt
+*.csv
+*.ckpt
+*.zip
+
+# Output and checkpoint folders (recursively)
+wandb/
+data/
+dftdata/
+fragment_molecule_videos/
+images/

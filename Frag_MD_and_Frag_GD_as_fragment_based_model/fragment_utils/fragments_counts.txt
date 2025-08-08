@@ -1,0 +1,3 @@
+the fragment number of train data (not drop duplicated):  21302014
+the fragment number of valid data (not drop duplicated):  2661230
+the fragment number of test data (not drop duplicated):  2665280
