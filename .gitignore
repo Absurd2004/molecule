@@ -19,6 +19,7 @@ __pycache__/
 # Output and checkpoint folders (recursively)
 wandb/
 data/
+data1/
 dftdata/
 fragment_molecule_videos/
 images/

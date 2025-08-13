@@ -107,8 +107,7 @@ class GPTDecoderLayer(nn.Module):
         super(GPTDecoderLayer, self).__setstate__(state)
 
     def forward(self, tgt, tgt_mask=None, tgt_key_padding_mask=None):
-        # type:
-        r"""Pass the inputs (and mask) through the decoder layer.
+        """Pass the inputs (and mask) through the decoder layer.
 
         Args:
             tgt: the sequence to the decoder layer (required).

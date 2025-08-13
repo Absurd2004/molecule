@@ -4,92 +4,79 @@ import os
 from rdkit import Chem
 from tqdm import tqdm
 
+EXPECTED_COLUMNS = ["Index", "SMILES", "ST Gap", "HL Gap", "S1", "T1"]
+
 def concatenate_csv_files():
-    # 获取所有匹配的CSV文件
-    file_pattern = './data/Transformer/gen_dataset_*.csv'
+    file_pattern = './dftdata/Photosensitizers*.csv'
     csv_files = glob.glob(file_pattern)
-    
-    # 按文件名排序（确保按数字顺序）
-    csv_files.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
-    
+    #csv_files.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
     print(f"找到 {len(csv_files)} 个CSV文件:")
-    for file in csv_files:
-        print(f"  - {file}")
-    
-    # 读取并合并所有CSV文件
-    all_smiles = []
+    for f in csv_files:
+        print(f"  - {f}")
+
+    all_valid_dfs = []
     total_rows = 0
-    
-    for file in csv_files:
+    invalid_smiles_rows = 0
+
+    for f in csv_files:
         try:
-            df = pd.read_csv(file, header=None)
-            # 假设SMILES在第一列
-            smiles_list = df.iloc[:, 0].tolist()
-            all_smiles.extend(smiles_list)
+            df = pd.read_csv(f)  # 读取表头
             total_rows += len(df)
-            print(f"已读取 {file}: {len(df)} 行")
+
+            # 列名规范化（如果大小写或空格差异可在此做修正）
+            df.columns = [c.strip() for c in df.columns]
+
+            # 检查必需列
+            missing = [c for c in EXPECTED_COLUMNS if c not in df.columns]
+            if missing:
+                print(f"跳过 {f}，缺少列: {missing}")
+                continue
+
+            # 只保留需要的列（若文件有额外列）
+            df = df[EXPECTED_COLUMNS].copy()
+
+            # SMILES 校验
+            print(f"验证 {f} 中 SMILES 有效性...")
+            valid_mask = []
+            for smi in tqdm(df["SMILES"], desc=f"验证SMILES-{os.path.basename(f)}", leave=False):
+                mol = Chem.MolFromSmiles(str(smi))
+                valid_mask.append(mol is not None)
+            df_valid = df[valid_mask].copy()
+            invalid_count_file = len(df) - len(df_valid)
+            invalid_smiles_rows += invalid_count_file
+
+            print(f"{f}: 总行 {len(df)}, 有效 {len(df_valid)}, 无效 {invalid_count_file}")
+            all_valid_dfs.append(df_valid)
         except Exception as e:
-            print(f"读取文件 {file} 时出错: {e}")
-    
-    print(f"\n原始数据统计:")
-    print(f"总SMILES数量: {len(all_smiles)}")
-    
-    # 验证SMILES有效性
-    valid_smiles = []
-    invalid_count = 0
-    
-    print("\n验证SMILES有效性...")
-    for smiles in tqdm(all_smiles, desc="验证SMILES"):
-        try:
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is not None:
-                valid_smiles.append(smiles)
-            else:
-                invalid_count += 1
-        except:
-            invalid_count += 1
-    
-    print(f"\n有效性验证结果:")
-    print(f"有效SMILES数量: {len(valid_smiles)}")
-    print(f"无效SMILES数量: {invalid_count}")
-    print(f"有效率: {len(valid_smiles)/len(all_smiles)*100:.2f}%")
-    
-    # 去重
-    print("\n去重处理...")
-    unique_smiles = list(set(valid_smiles))
-    duplicate_count = len(valid_smiles) - len(unique_smiles)
-    
-    print(f"去重结果:")
-    print(f"去重前有效SMILES数量: {len(valid_smiles)}")
-    print(f"去重后唯一SMILES数量: {len(unique_smiles)}")
-    print(f"重复SMILES数量: {duplicate_count}")
-    print(f"去重率: {duplicate_count/len(valid_smiles)*100:.2f}%")
-    
-    # 保存结果
-    if unique_smiles:
-        output_file = './data/Transformer/01_succeed_smiles.csv'
-        
-        # 确保目录存在
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        
-        # 保存为DataFrame
-        result_df = pd.DataFrame(unique_smiles, columns=['SMILES'])
-        result_df.to_csv(output_file, header=True, index=False)
-        
-        print(f"\n处理完成!")
-        print(f"最终保存的唯一有效SMILES数量: {len(unique_smiles)}")
-        print(f"输出文件: {output_file}")
-        
-        # 打印统计摘要
-        print(f"\n=== 统计摘要 ===")
-        print(f"原始总数: {len(all_smiles)}")
-        print(f"有效数量: {len(valid_smiles)} ({len(valid_smiles)/len(all_smiles)*100:.2f}%)")
-        print(f"最终唯一: {len(unique_smiles)} ({len(unique_smiles)/len(all_smiles)*100:.2f}%)")
-        print(f"无效丢弃: {invalid_count} ({invalid_count/len(all_smiles)*100:.2f}%)")
-        print(f"重复丢弃: {duplicate_count} ({duplicate_count/len(all_smiles)*100:.2f}%)")
-        
-    else:
-        print("没有找到有效的SMILES进行保存")
+            print(f"读取文件 {f} 时出错: {e}")
+
+    if not all_valid_dfs:
+        print("没有可合并的有效数据")
+        return
+
+    combined = pd.concat(all_valid_dfs, ignore_index=True)
+
+    # 去重（按 SMILES）
+    before_dup = len(combined)
+    combined_unique = combined.drop_duplicates(subset=["SMILES"], keep="first").reset_index(drop=True)
+    after_dup = len(combined_unique)
+    dup_rows = before_dup - after_dup
+
+    # 重新生成 Index（如果希望连续可重排；若想保留原 Index 可注释掉）
+    combined_unique["Index"] = range(1, len(combined_unique) + 1)
+
+    output_file = './data1/SMILES.csv'
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    combined_unique.to_csv(output_file, index=False)
+
+    print("\n=== 汇总统计 ===")
+    print(f"原始总行数: {total_rows}")
+    print(f"合并后有效行数: {before_dup}")
+    print(f"无效SMILES行数: {invalid_smiles_rows}")
+    print(f"重复SMILES行数: {dup_rows}")
+    print(f"最终唯一有效行数: {after_dup}")
+    print(f"输出文件: {output_file}")
+    print(f"列: {list(combined_unique.columns)}")
 
 if __name__ == "__main__":
     concatenate_csv_files()

@@ -11,6 +11,8 @@ from MCMG_utils.utils import Variable
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
+
+
 class decoderTransformer(nn.Module):
     def __init__(self, vocab_size, d_model, nhead, num_decoder_layers, dim_feedforward, max_seq_length,
                  pos_dropout, trans_dropout):
