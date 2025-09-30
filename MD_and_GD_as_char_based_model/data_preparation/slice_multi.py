@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import random
 from collections import OrderedDict
 from multiprocessing import get_context
 import heapq
@@ -52,7 +53,7 @@ def _process_line(item):
 
     original_smiles = uc.to_smiles(mol)
 
-    for cuts in range(1, WORKER_MAX_CUTS + 1):
+    for cuts in range(2, WORKER_MAX_CUTS + 1):
         for sliced_mol in WORKER_ENUMERATOR.enumerate(mol, cuts=cuts):
             scaffold_smi, decoration_map = sliced_mol.to_smiles()
             decorations = tuple(
@@ -79,7 +80,7 @@ class SliceDB(ma.Action):
 
     def __init__(self, input_path, output_path, slice_type,
                  scaffold_conditions, decoration_conditions,
-                 max_cuts, num_workers, logger=None):
+                 max_cuts, num_workers, sample_size=0, sample_seed=42, logger=None):
         ma.Action.__init__(self, logger)
 
         self.input_path = input_path
@@ -91,13 +92,35 @@ class SliceDB(ma.Action):
         self.slice_type = slice_type
         self.scaffold_conditions = scaffold_conditions
         self.decoration_conditions = decoration_conditions
+        self.sample_size = max(0, int(sample_size or 0))
+        self.sample_seed = int(sample_seed if sample_seed is not None else 42)
 
     def run(self):
         slices = OrderedDict()
         print(f"start slicing with {self.num_workers} processes")
 
+        selected_lines = None
         total_molecules = None
-        if tqdm is not None:
+
+        if self.sample_size > 0:
+            with open(self.input_path, "r") as input_file:
+                all_lines = input_file.readlines()
+
+            if not all_lines:
+                print("Input file is empty; nothing to sample")
+                return []
+
+            if self.sample_size < len(all_lines):
+                rng = random.Random(self.sample_seed)
+                indices = sorted(rng.sample(range(len(all_lines)), self.sample_size))
+                selected_lines = [all_lines[idx] for idx in indices]
+                print(f"Sampling {len(selected_lines)} of {len(all_lines)} molecules for slicing")
+            else:
+                selected_lines = all_lines
+                print(f"Requested sample size >= dataset; processing all {len(all_lines)} molecules")
+
+            total_molecules = len(selected_lines)
+        elif tqdm is not None:
             try:
                 total_molecules = _count_lines(self.input_path)
             except OSError:
@@ -112,12 +135,18 @@ class SliceDB(ma.Action):
         next_index = 0
         completed = 0
 
-        with ctx.Pool(processes=self.num_workers, initializer=_init_worker, initargs=init_args) as pool:
-            with open(self.input_path, "r") as input_file:
-                line_iterator = ((idx, line) for idx, line in enumerate(input_file))
-                chunk_size = max(1, self.num_workers * 4)
+        chunk_size = max(1, self.num_workers * 4)
 
-                for index, partial in pool.imap_unordered(_process_line, line_iterator, chunksize=chunk_size):
+        with ctx.Pool(processes=self.num_workers, initializer=_init_worker, initargs=init_args) as pool:
+            if selected_lines is not None:
+                line_iterator = ((idx, line) for idx, line in enumerate(selected_lines))
+                iterator = line_iterator
+            else:
+                input_file = open(self.input_path, "r")
+                iterator = ((idx, line) for idx, line in enumerate(input_file))
+
+            try:
+                for index, partial in pool.imap_unordered(_process_line, iterator, chunksize=chunk_size):
                     heapq.heappush(pending_results, (index, partial))
 
                     while pending_results and pending_results[0][0] == next_index:
@@ -134,6 +163,9 @@ class SliceDB(ma.Action):
                         completed += 1
                         if completed % 10000 == 0:
                             print(f"Processed {completed} molecules...", flush=True)
+            finally:
+                if selected_lines is None:
+                    input_file.close()
 
         while pending_results:
             _, ordered_partial = heapq.heappop(pending_results)
@@ -175,17 +207,22 @@ def parse_args():
     """Parses input arguments."""
     parser = argparse.ArgumentParser(description="Slices the molecules a given way using multi-processing.")
     parser.add_argument("--input-smiles-path", "-i",
-                        help="Path to the input file with molecules in SMILES notation.", type=str, default="./data/merged_smiles.smi")
+                        help="Path to the input file with molecules in SMILES notation.", type=str, default="./data/valid/valid.smi")
     parser.add_argument("--output-parquet-folder", "-o",
-                        help="Path to the output Apache Parquet folder.", type=str, default="./data/sliced_parquet")
+                        help="Path to the output Apache Parquet folder.", type=str, default="./data/valid/sliced_parquet_recap")
     parser.add_argument("--output-smiles-path", "-u",
-                        help="Path to the output SMILES file.", type=str, default="./data/sliced_smiles.tsv")
+                        help="Path to the output SMILES file.", type=str, default="./data/valid/sliced_smiles_recap.tsv")
     parser.add_argument("--max-cuts", "-c",
                         help="Maximum number of cuts to attempts for each molecule [DEFAULT: 4]", type=int, default=4)
     parser.add_argument("--slice-type", "-s",
                         help="Kind of slicing performed TYPES=(recap, hr) [DEFAULT: hr]", type=str, default="recap")
     parser.add_argument("--conditions-file", "-f",
                         help="JSON file with the filtering conditions for the scaffolds and the decorations.", type=str, default="./condition/condition.json")
+
+    parser.add_argument("--sample-size", "-S",
+                        help="Optional number of input molecules to randomly sample before slicing (0 = use all).", type=int, default=1000)
+    parser.add_argument("--sample-seed",
+                        help="Random seed used when sampling input molecules.", type=int, default=42)
 
     default_threads = max(1, (os.cpu_count() or 1))
     parser.add_argument("--num-threads", "-t", "--num-processes", "-p",
@@ -215,7 +252,7 @@ def main():
 
     slice_db_action = SliceDB(args.input_smiles_path, args.output_parquet_folder,
                               args.slice_type, scaffold_conditions, decoration_conditions,
-                              args.max_cuts, args.num_threads, LOG)
+                              args.max_cuts, args.num_threads, args.sample_size, args.sample_seed, LOG)
     slice_rows = slice_db_action.run()
 
     if args.output_smiles_path:

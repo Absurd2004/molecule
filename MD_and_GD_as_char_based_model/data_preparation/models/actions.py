@@ -1,14 +1,20 @@
 import random
+from pathlib import Path
 
 import numpy as np
-import scipy.stats as sps
 
 import torch
 import torch.utils.data as tud
 import torch.nn.utils as tnnu
 
+try:
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+    from rdkit.Chem.Draw import rdMolDraw2D
+except ImportError as exc:  # pragma: no cover - dependency guard
+    raise ImportError("RDKit is required for molecule visualization; install via 'conda install -c rdkit rdkit'.") from exc
+
 import models.dataset as md
-import utils.tensorboard as utb
 import utils.scaffold as usc
 
 
@@ -86,6 +92,7 @@ class TrainModel(Action):
         :return: An iterator of (total_batches, epoch_iterator), where the epoch iterator
                   returns the loss function at each batch in the epoch.
         """
+        print(f"start training for {self.epochs} epochs")
         for epoch, training_set in zip(range(1, self.epochs + 1), self.training_sets):
             dataloader = self._initialize_dataloader(training_set)
             epoch_iterator = self._epoch_iterator(dataloader)
@@ -101,6 +108,7 @@ class TrainModel(Action):
     def _epoch_iterator(self, dataloader):
         for scaffold_batch, decorator_batch in dataloader:
             loss = self.model.likelihood(*scaffold_batch, *decorator_batch).mean()
+            #print(f"loss: {loss}")
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -118,163 +126,172 @@ class TrainModel(Action):
 
 
 class CollectStatsFromModel(Action):
-    """Collects stats from an existing RNN model."""
+    """Collect and persist evaluation metrics for a decorator model."""
 
-    def __init__(self, model, epoch, training_set, validation_set, writer, sample_size,
-                 decoration_type="multi", with_weights=False, other_values=None, logger=None):
-        """
-        Creates an instance of CollectStatsFromModel.
-        : param model: A model instance initialized as sampling_mode.
-        : param epoch: Epoch number to be sampled(informative purposes).
-        : param training_set: Iterator with the training set.
-        : param validation_set: Iterator with the validation set.
-        : param writer: Writer object(Tensorboard writer).
-        : param other_values: Other values to save for the epoch.
-        : param sample_size: Number of molecules to sample from the training / validation / sample set.
-        : param decoration_type: Kind of decorations (single or multi).
-        : param with_weights: To calculate or not the weights.
-        : return:
-        """
+    def __init__(self, model, epoch, training_set, validation_set, sample_size,
+                 output_dir, decoration_type="multi", other_values=None, logger=None,
+                 max_mols_per_grid=0, individual_image_size=512):
         Action.__init__(self, logger)
         self.model = model
         self.epoch = epoch
         self.sample_size = sample_size
         self.training_set = training_set
         self.validation_set = validation_set
-        self.writer = writer
-        self.other_values = other_values
-
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.other_values = other_values or {}
         self.decoration_type = decoration_type
-        self.with_weights = with_weights
-        self.sample_size = max(sample_size, 1)
+        self.max_mols_per_grid = max(0, int(max_mols_per_grid or 0))
+        if isinstance(individual_image_size, (list, tuple)) and len(individual_image_size) == 2:
+            width, height = individual_image_size
+        else:
+            width = height = int(individual_image_size)
+        self.individual_image_size = (max(1, int(width)), max(1, int(height)))
 
         self.data = {}
 
-        self._calc_nlls_action = CalculateNLLsFromModel(self.model, 128, self.logger)
-        self._sample_model_action = SampleModel(self.model, 128, self.logger)
+        self._calc_nlls_action = CalculateNLLsFromModel(self.model, 128, logger=self.logger)
+        self._sample_model_action = SampleModel(self.model, 128, logger=self.logger)
 
     @torch.no_grad()
     def run(self):
-        """
-        Collects stats for a specific model object, epoch, validation set, training set and writer object.
-        : return: A dictionary with all the data saved for that given epoch.
-        """
-        self._log("info", "Collecting data for epoch %s", self.epoch)
-        self.data = {}
+        #self._log("info", "Collecting data for epoch %s", self.epoch)
+        print(f"Collecting data for epoch {self.epoch}")
+        self.data = {"epoch": self.epoch}
 
-        self._log("debug", "Slicing training and validation sets")
-        sliced_training_set = list(random.sample(self.training_set, self.sample_size))
-        sliced_validation_set = list(random.sample(self.validation_set, self.sample_size))
+        if isinstance(self.validation_set, list):
+            validation_set_full = self.validation_set
+        else:
+            validation_set_full = list(self.validation_set)
+            self.validation_set = validation_set_full
+        #self._log("debug", "Validation set size: %d", len(validation_set_full))
+        print(f"Validation set size: {len(validation_set_full)}")
 
-        self._log("debug", "Sampling decorations for both sets")
-        sampled_training_mols, sampled_training_nlls = self._sample_decorations(next(zip(*sliced_training_set)))
-        sampled_validation_mols, sampled_validation_nlls = self._sample_decorations(next(zip(*sliced_validation_set)))
+        validation_nlls = list(self._calc_nlls_action.run(validation_set_full))
+        if validation_nlls:
+            validation_nlls_arr = np.array(validation_nlls, dtype=np.float32)
+            self.data["validation_nll_mean"] = float(validation_nlls_arr.mean())
+            self.data["validation_nll_count"] = int(len(validation_nlls_arr))
+        else:
+            self.data["validation_nll_mean"] = float("nan")
+            self.data["validation_nll_count"] = 0
 
-        self._log("debug", "Calculating NLLs for the validation and training sets")
-        training_nlls = np.array(list(self._calc_nlls_action.run(sliced_training_set)))
-        validation_nlls = np.array(list(self._calc_nlls_action.run(sliced_validation_set)))
+        scaffolds_for_sampling = [sc for sc, _ in validation_set_full]
+        if not scaffolds_for_sampling:
+            #self._log("warning", "Validation set is empty; skipping molecule generation")
+            print("Validation set is empty; skipping molecule generation")
+            return self._merge_other_values()
 
-        if self.with_weights:
-            self._log("debug", "Calculating weight stats")
-            self._weight_stats()
+        if self.sample_size and self.sample_size < len(scaffolds_for_sampling):
+            scaffolds_for_sampling = scaffolds_for_sampling[:self.sample_size]
 
-        self._log("debug", "Calculating nll stats")
-        self._nll_stats(sampled_training_nlls, sampled_validation_nlls, training_nlls, validation_nlls)
+        sampled_mols, _ = self._sample_decorations(scaffolds_for_sampling)
+        total_requested = len(scaffolds_for_sampling)
+        valid_generated = len(sampled_mols)
+        success_ratio = (valid_generated / total_requested) if total_requested else 0.0
 
-        self._log("debug", "Calculating validity stats")
-        self._valid_stats(sampled_training_mols, "training")
-        self._valid_stats(sampled_validation_mols, "validation")
+        self.data["generated_molecule_total"] = total_requested
+        self.data["generated_molecule_valid"] = valid_generated
+        self.data["generated_molecule_valid_ratio"] = success_ratio
 
-        self._log("debug", "Drawing some molecules")
-        self._draw_mols(sampled_training_mols, "training")
-        self._draw_mols(sampled_validation_mols, "validation")
+        image_payload = self._save_molecule_grid(sampled_mols)
+        if image_payload:
+            grid_paths = image_payload.get("grid", [])
+            if grid_paths:
+                self.data["generated_molecule_image_path"] = str(grid_paths[0])
+                self.data["generated_molecule_image_paths"] = "\n".join(str(path) for path in grid_paths)
 
+            individual_paths = image_payload.get("individual", [])
+            if individual_paths:
+                self.data["generated_molecule_individual_paths"] = "\n".join(str(path) for path in individual_paths)
+                self.data["generated_molecule_individual_count"] = len(individual_paths)
+                if not grid_paths:
+                    self.data["generated_molecule_image_path"] = str(individual_paths[0])
+                    self.data["generated_molecule_image_paths"] = "\n".join(str(path) for path in individual_paths)
+
+            smiles_file = image_payload.get("smiles")
+            if smiles_file:
+                self.data["generated_molecule_smiles_path"] = str(smiles_file)
+
+        return self._merge_other_values()
+
+    def _merge_other_values(self):
         if self.other_values:
-            self._log("debug", "Adding other values")
-            for name, val in self.other_values.items():
-                self._add_scalar(name, val)
-
+            self.data.update(self.other_values)
         return self.data
 
     def _sample_decorations(self, scaffold_list):
-        mols = []
+        mol_smis = []
         nlls = []
         for scaff, decoration, nll in self._sample_model_action.run(scaffold_list):
-            mol = usc.join_first_attachment(scaff, decoration)
+            #mol = usc.join_first_attachment(scaff, decoration)
+            mol = usc.join_joined_attachments(scaff, decoration)
             if mol:
-                mols.append(mol)
+                mol_smi = Chem.MolToSmiles(mol, isomericSmiles=False)
+                mol_smis.append(mol_smi)
             nlls.append(nll)
-        return (mols, np.array(nlls))
+        return mol_smis, np.array(nlls, dtype=np.float32) if nlls else np.array([], dtype=np.float32)
 
-    def _valid_stats(self, mols, name):
-        self._add_scalar("valid_{}".format(name), 100.0*len(mols)/self.sample_size)
+    def _save_molecule_grid(self, mol_smiles):
+        if not mol_smiles:
+            return None
 
-    def _weight_stats(self):
-        for name, weights in self.model.network.named_parameters():
-            self._add_histogram("weights/{}".format(name), weights.clone().cpu().data.numpy())
+        mol_records = []
+        for sm in mol_smiles:
+            mol = Chem.MolFromSmiles(sm)
+            if mol is not None:
+                mol_records.append((sm, mol))
 
-    def _nll_stats(self, sampled_training_nlls, sampled_validation_nlls, training_nlls, validation_nlls):
-        self._add_histogram("nll_plot/sampled_training", sampled_training_nlls)
-        self._add_histogram("nll_plot/sampled_validation", sampled_validation_nlls)
-        self._add_histogram("nll_plot/validation", validation_nlls)
-        self._add_histogram("nll_plot/training", training_nlls)
+        if not mol_records:
+            self._log("warning", "All generated molecules failed to parse; skipping image save")
+            return None
 
-        self._add_scalars("nll/avg", {
-            "sampled_training": sampled_training_nlls.mean(),
-            "sampled_validation": sampled_validation_nlls.mean(),
-            "validation": validation_nlls.mean(),
-            "training": training_nlls.mean()
-        })
+        epoch_dir = self.output_dir / f"epoch_{self.epoch:04d}"
+        epoch_dir.mkdir(parents=True, exist_ok=True)
 
-        self._add_scalars("nll/var", {
-            "sampled_training": sampled_training_nlls.var(),
-            "sampled_validation": sampled_validation_nlls.var(),
-            "validation": validation_nlls.var(),
-            "training": training_nlls.var()
-        })
+        smiles_path = epoch_dir / "generated_molecules.smi"
+        with smiles_path.open("w", encoding="utf-8") as handle:
+            for sm, _ in mol_records:
+                handle.write(f"{sm}\n")
 
-        def bin_dist(dist, bins=1000, dist_range=(0, 100)):
-            bins = np.histogram(dist, bins=bins, range=dist_range, density=False)[0]
-            bins[bins == 0] = 1
-            return bins / bins.sum()
+        grid_paths = []
+        if self.max_mols_per_grid > 0:
+            chunk_size = self.max_mols_per_grid
+            mol_objects = [mol for _, mol in mol_records]
 
-        def jsd(dists, binned=False):  # notice that the dists can or cannot be binned
-            # get the min size of each dist
-            min_size = min(len(dist) for dist in dists)
-            dists = [dist[:min_size] for dist in dists]
-            if binned:
-                dists = [bin_dist(dist) for dist in dists]
-            num_dists = len(dists)
-            avg_dist = np.sum(dists, axis=0) / num_dists
-            return np.sum([sps.entropy(dist, avg_dist) for dist in dists]) / num_dists
+            def _chunks(sequence, size):
+                for start in range(0, len(sequence), size):
+                    yield sequence[start:start + size]
 
-        self._add_scalar("nll_plot/jsd_joined_bins",
-                         jsd([sampled_training_nlls, sampled_validation_nlls,
-                              training_nlls, validation_nlls], binned=True))
+            for chunk_index, chunk in enumerate(_chunks(mol_objects, chunk_size), start=1):
+                mols_per_row = min(4, max(1, len(chunk)))
+                image = Draw.MolsToGridImage(chunk, molsPerRow=mols_per_row, subImgSize=(250, 250))
+                grid_path = epoch_dir / f"generated_molecules_{chunk_index:03d}.png"
+                image.save(str(grid_path))
+                grid_paths.append(grid_path)
 
-        self._add_scalar("nll_plot/jsd_joined_no_bins",
-                         jsd([sampled_training_nlls, sampled_validation_nlls,
-                              training_nlls, validation_nlls]))
+        individual_dir = epoch_dir / "individual"
+        individual_dir.mkdir(parents=True, exist_ok=True)
 
-    def _draw_mols(self, mols, name):
-        try:
-            utb.add_mols(self.writer, "molecules_{}".format(name), random.sample(
-                mols, 16), mols_per_row=4, global_step=self.epoch)
-        except ValueError:
-            pass
+        individual_paths = []
+        for idx, (_, mol) in enumerate(mol_records, start=1):
+            indiv_path = individual_dir / f"mol_{idx:05d}.png"
+            self._draw_molecule_full_frame(mol, indiv_path)
+            individual_paths.append(indiv_path)
 
-    def _add_scalar(self, key, val):
-        self.data[key] = val
-        self.writer.add_scalar(key, val, self.epoch)
+        return {
+            "grid": grid_paths,
+            "individual": individual_paths,
+            "smiles": smiles_path,
+        }
 
-    def _add_scalars(self, key, dict_vals):
-        for k, val in dict_vals.items():
-            self.data["{}.{}".format(key, k)] = val
-        self.writer.add_scalars(key, dict_vals, self.epoch)
-
-    def _add_histogram(self, key, vals):
-        self.data[key] = vals
-        self.writer.add_histogram(key, vals, self.epoch)
+    def _draw_molecule_full_frame(self, mol, output_path):
+        width, height = self.individual_image_size
+        drawer = rdMolDraw2D.MolDraw2DCairo(width, height)
+        drawer.drawOptions().padding = 0.0
+        rdMolDraw2D.PrepareAndDrawMolecule(drawer, mol)
+        drawer.FinishDrawing()
+        output_path.write_bytes(drawer.GetDrawingText())
 
 
 class SampleModel(Action):

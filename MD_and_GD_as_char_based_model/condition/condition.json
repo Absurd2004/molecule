@@ -6,19 +6,8 @@
     },
     "decoration": {
         "mol_weight": {
+            "min":50,
             "max": 450
-        },
-        "hba": {
-            "max": 10
-        },
-        "hbd": {
-            "max": 3
-        },
-        "clogp": {
-            "max": 3
-        },
-        "rotatable_bonds": {
-            "max": 12
         }
     }
 }

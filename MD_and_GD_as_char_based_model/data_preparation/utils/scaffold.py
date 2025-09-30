@@ -78,8 +78,11 @@ ATTACHMENT_POINT_NO_BRACKETS_REGEXP = r"(?<!\[){}".format(re.escape(ATTACHMENT_P
 ATTACHMENT_SEPARATOR_TOKEN = "|"
 
 SLICE_SMARTS = {
+    #"hr": [
+        #"[*]!@-[*]"
+    #],
     "hr": [
-        "[*]!@-[*]"
+        "[R]!@-[!R]"
     ],
     "recap": [
         "[C;$(C=O)]!@-N",  # amides and urea
@@ -309,12 +312,14 @@ def join_joined_attachments(scaffold_smi, decorations_smi):
     scaffold_smi = add_attachment_point_numbers(scaffold_smi)
     num_att_points = len(get_attachment_points(scaffold_smi))
     if len(decorations_smi) != num_att_points:
+        print("Number of decorations does not match number of attachment points")
         return None
 
     mol = uc.to_mol(scaffold_smi)
     for dec in decorations_smi:
         mol = join(to_smiles(mol), dec)
         if not mol:
+            print("Could not join scaffold and decoration")
             return None
     return mol
 
@@ -332,7 +337,7 @@ def remove_attachment_point_numbers(mol_or_smi):
     return re.sub(ATTACHMENT_POINT_NUM_REGEXP, "[{}]".format(ATTACHMENT_POINT_TOKEN), mol_or_smi)
 
 
-def add_attachment_point_numbers(mol_or_smi, canonicalize=True):
+def add_attachment_point_numbers(mol_or_smi, canonicalize=False):
     """
     Adds the numbers for the attachment points throughout the molecule.
     :param mol_or_smi: SMILES string to convert.

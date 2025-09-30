@@ -32,13 +32,14 @@ def parse_args():
 
 
 
-def _to_sliced_mol(row):
+def _to_sliced_entry(row):
     fields = row.strip().split("\t")
     if len(fields) < 2:
         raise ValueError("Row does not contain scaffold and decorations")
 
     scaffold_smi = fields[0]
     decoration_field = fields[1]
+    original_smi = fields[2] if len(fields) > 2 else ""
 
     scaffold_mol = uc.to_mol(scaffold_smi)
     if not scaffold_mol:
@@ -52,7 +53,7 @@ def _to_sliced_mol(row):
             raise ValueError("Invalid decoration SMILES")
         decorations[idx] = dec_mol
 
-    return usc.SlicedMol(scaffold_mol, decorations)
+    return usc.SlicedMol(scaffold_mol, decorations), original_smi
 
 
 def _load_sliced_mols(input_path, logger):
@@ -64,30 +65,40 @@ def _load_sliced_mols(input_path, logger):
             if not stripped:
                 continue
             try:
-                sliced_mols.append(_to_sliced_mol(stripped))
+                sliced_mols.append(_to_sliced_entry(stripped))
             except ValueError as exc:  # pylint: disable=broad-exception-caught
                 if logger:
                     logger.warning("Skipping line %d: %s", line_number, exc)
     return sliced_mols
 
 
-def _format_training_set_row_multi(sliced_mol):
+def _format_training_set_row_multi(sliced_entry):
+    sliced_mol, original_smi = sliced_entry
     scaff_smi, dec_smis = sliced_mol.to_smiles(variant="random")
 
     first_num = usc.get_first_attachment_point(scaff_smi)
     decoration_smi = dec_smis[first_num]
 
-    return (usc.remove_attachment_point_numbers(scaff_smi), usc.remove_attachment_point_numbers(decoration_smi))
+    return (
+        usc.remove_attachment_point_numbers(scaff_smi),
+        usc.remove_attachment_point_numbers(decoration_smi),
+        original_smi,
+    )
 
 
-def _format_training_set_row_single(sliced_mol):
+def _format_training_set_row_single(sliced_entry):
+    sliced_mol, original_smi = sliced_entry
     scaff_smi, dec_smis = sliced_mol.to_smiles(variant="random")
 
     attachment_points = usc.get_attachment_points(scaff_smi)
     decorations = []
     for idx in attachment_points:
         decorations.append(usc.remove_attachment_point_numbers(dec_smis[idx]))
-    return (usc.remove_attachment_point_numbers(scaff_smi), usc.ATTACHMENT_SEPARATOR_TOKEN.join(decorations))
+    return (
+        usc.remove_attachment_point_numbers(scaff_smi),
+        usc.ATTACHMENT_SEPARATOR_TOKEN.join(decorations),
+        original_smi,
+    )
 
 
 def main():
@@ -123,9 +134,9 @@ def main():
                 unit="mol",
                 leave=False
             )
-            for sliced_mol in smiles_iterator:
-                scaff_smi, dec_smi = format_func(sliced_mol)
-                out_file.write("{}\t{}\n".format(scaff_smi, dec_smi))
+            for sliced_entry in smiles_iterator:
+                scaff_smi, dec_smi, original_smi = format_func(sliced_entry)
+                out_file.write("{}\t{}\t{}\n".format(scaff_smi, dec_smi, original_smi))
 
 
 LOG = ul.get_logger("create_randomized_smiles")

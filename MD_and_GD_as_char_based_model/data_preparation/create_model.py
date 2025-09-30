@@ -22,8 +22,11 @@ def parse_args():
     parser.add_argument("--input-smiles-path", "-i",
                         help=("File with two fields (scaffold, decoration) to calculate the vocabularies from.\
                         The SMILES are taken as-is, no processing is done."),
-                        type=str, default= "./data/randomized_smiles/000.smi")
-    parser.add_argument("--output-model-path", "-o", help="Prefix or path to the output model file.", type=str, default= "./pretrained_models")
+                        type=str, default= "./data/train/randomized_smiles/000.smi")
+    parser.add_argument("--output-model-path", "-o", help="Prefix or path to the output model file.", type=str, default= "./pretrained_models/empty_model")
+    parser.add_argument("--validation-smiles-path", "-v",
+                        help="Optional validation SMILES file whose rows will be merged when building the vocabulary.",
+                        type=str, default= "./data/valid/randomized_smiles/000.smi")
     parser.add_argument("--num-layers", "-l",
                         help="Number of RNN layers of the model [DEFAULT: 3]", type=int, default=3)
     parser.add_argument("--layer-size", "-s",
@@ -33,15 +36,15 @@ def parse_args():
     parser.add_argument("--dropout", "-d",
                         help="Amount of dropout between the GRU layers [DEFAULT: 0.0]", type=float, default=0)
     parser.add_argument("--layer-normalization", "--ln",
-                        help="Add layer normalization to the GRU output", action="store_true", default=False)
+                        help="Add layer normalization to the GRU output", action="store_true", default=True)
     parser.add_argument("--max-sequence-length",
                         help="Maximum length of the sequences [DEFAULT: 256]", type=int, default=256)
     parser.add_argument("--scaffold-vocab-output",
                         help="File to save scaffold vocabulary tokens. Defaults to '<output-model-path>_scaffold_tokens.txt'",
-                        type=str, default=None)
+                        type=str, default="./pretrained_models/empty_model/scaffold_tokens.txt")
     parser.add_argument("--decoration-vocab-output",
                         help="File to save decoration vocabulary tokens. Defaults to '<output-model-path>_decoration_tokens.txt'",
-                        type=str, default=None)
+                        type=str, default="./pretrained_models/empty_model/decoration_tokens.txt")
 
     return parser.parse_args()
 
@@ -51,6 +54,17 @@ def main():
     args = parse_args()
 
     scaffold_list, decoration_list = zip(*uc.read_csv_file(args.input_smiles_path, num_fields=2))
+    scaffold_list = list(scaffold_list)
+    decoration_list = list(decoration_list)
+    print(len(scaffold_list), len(decoration_list))
+
+    if args.validation_smiles_path:
+        validation_pairs = list(uc.read_csv_file(args.validation_smiles_path, num_fields=2))
+        if validation_pairs:
+            val_scaffolds, val_decorations = zip(*validation_pairs)
+            scaffold_list.extend(val_scaffolds)
+            decoration_list.extend(val_decorations)
+            print(len(scaffold_list), len(decoration_list))
 
     LOG.info("Building vocabulary")
 
