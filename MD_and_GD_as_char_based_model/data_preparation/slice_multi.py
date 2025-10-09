@@ -207,11 +207,11 @@ def parse_args():
     """Parses input arguments."""
     parser = argparse.ArgumentParser(description="Slices the molecules a given way using multi-processing.")
     parser.add_argument("--input-smiles-path", "-i",
-                        help="Path to the input file with molecules in SMILES notation.", type=str, default="./data/valid/valid.smi")
+                        help="Path to the input file with molecules in SMILES notation.", type=str, default="./data/train/our_smiles.smi")
     parser.add_argument("--output-parquet-folder", "-o",
-                        help="Path to the output Apache Parquet folder.", type=str, default="./data/valid/sliced_parquet_recap")
+                        help="Path to the output Apache Parquet folder.", type=str, default="./data/train/our_smiles_recap")
     parser.add_argument("--output-smiles-path", "-u",
-                        help="Path to the output SMILES file.", type=str, default="./data/valid/sliced_smiles_recap.tsv")
+                        help="Path to the output SMILES file.", type=str, default="./data/train/our_smiles_recap.tsv")
     parser.add_argument("--max-cuts", "-c",
                         help="Maximum number of cuts to attempts for each molecule [DEFAULT: 4]", type=int, default=4)
     parser.add_argument("--slice-type", "-s",

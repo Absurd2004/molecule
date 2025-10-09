@@ -88,7 +88,7 @@ def process_dataset(input_path: Path, success_path: Path, failure_path: Path) ->
 
 def main() -> None:
 	base_dir = Path(__file__).resolve().parent
-	input_path = base_dir.parent / "data" / "randomized_smiles_check_mp" / "000.smi"
+	input_path = base_dir.parent / "data" / "train"/"randomized_smiles_our_smiles" / "000.smi"
 	success_path = base_dir / "joined_success.smi"
 	failure_path = base_dir / "joined_failures.tsv"
 

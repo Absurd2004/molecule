@@ -24,3 +24,4 @@ dftdata/
 fragment_molecule_videos/
 images/
 pretrained_models/
+logs/MD_and_GD_as_char_based_model/logs/

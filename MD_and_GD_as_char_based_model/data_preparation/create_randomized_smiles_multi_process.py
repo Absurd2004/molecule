@@ -20,9 +20,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Creates many sets with a given seed.")
     parser.add_argument("--input-smi-path", "-i",
-                        help="Path to a SMILES file to convert with scaffolds and decorations.", type=str, default="./data/valid/sliced_smiles.tsv")
+                        help="Path to a SMILES file to convert with scaffolds and decorations.", type=str, default="./data/train/our_smiles_recap.tsv")
     parser.add_argument("--output-smi-folder-path", "-o",
-                        help="Path to a folder that will have the converted SMILES files.", type=str, default="./data/valid/randomized_smiles")
+                        help="Path to a folder that will have the converted SMILES files.", type=str, default="./data/train/randomized_smiles_our_smiles")
     parser.add_argument("--num-files", "-n",
                         help="Number of SMILES files to create (numbered from 000 ...) [DEFAULT: 1]",
                         type=int, default=5)
