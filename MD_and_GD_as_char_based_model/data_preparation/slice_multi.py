@@ -38,19 +38,21 @@ def _process_line(item):
     index, line = item
     line = line.strip()
     result = OrderedDict()
+    is_valid = False
 
     if not line:
-        return index, result
+        return index, result, is_valid
 
     fields = line.split("\t")
     if not fields or not fields[0]:
-        return index, result
+        return index, result, is_valid
 
     smiles = fields[0]
     mol = uc.to_mol(smiles)
     if not mol:
-        return index, result
+        return index, result, is_valid
 
+    is_valid = True
     original_smiles = uc.to_smiles(mol)
 
     for cuts in range(2, WORKER_MAX_CUTS + 1):
@@ -68,7 +70,7 @@ def _process_line(item):
                     "smiles": original_smiles
                 }
 
-    return index, result
+    return index, result, is_valid
 
 
 def _count_lines(path):
@@ -94,6 +96,7 @@ class SliceDB(ma.Action):
         self.decoration_conditions = decoration_conditions
         self.sample_size = max(0, int(sample_size or 0))
         self.sample_seed = int(sample_seed if sample_seed is not None else 42)
+        self.valid_molecules = 0
 
     def run(self):
         slices = OrderedDict()
@@ -134,6 +137,7 @@ class SliceDB(ma.Action):
         pending_results = []
         next_index = 0
         completed = 0
+        valid_molecules = 0
 
         chunk_size = max(1, self.num_workers * 4)
 
@@ -146,11 +150,13 @@ class SliceDB(ma.Action):
                 iterator = ((idx, line) for idx, line in enumerate(input_file))
 
             try:
-                for index, partial in pool.imap_unordered(_process_line, iterator, chunksize=chunk_size):
-                    heapq.heappush(pending_results, (index, partial))
+                for index, partial, is_valid in pool.imap_unordered(_process_line, iterator, chunksize=chunk_size):
+                    heapq.heappush(pending_results, (index, partial, is_valid))
 
                     while pending_results and pending_results[0][0] == next_index:
-                        _, ordered_partial = heapq.heappop(pending_results)
+                        _, ordered_partial, ordered_valid = heapq.heappop(pending_results)
+                        if ordered_valid:
+                            valid_molecules += 1
                         if ordered_partial:
                             for key, meta in ordered_partial.items():
                                 if key not in slices:
@@ -168,7 +174,9 @@ class SliceDB(ma.Action):
                     input_file.close()
 
         while pending_results:
-            _, ordered_partial = heapq.heappop(pending_results)
+            _, ordered_partial, ordered_valid = heapq.heappop(pending_results)
+            if ordered_valid:
+                valid_molecules += 1
             if ordered_partial:
                 for key, meta in ordered_partial.items():
                     if key not in slices:
@@ -190,6 +198,7 @@ class SliceDB(ma.Action):
             for (scaffold, decorations), meta in slices.items()
         ]
 
+        self.valid_molecules = valid_molecules
         self._log("info", "Obtained %d sliced molecules", len(rows))
 
         if self.output_path:
@@ -220,7 +229,7 @@ def parse_args():
                         help="JSON file with the filtering conditions for the scaffolds and the decorations.", type=str, default="./condition/condition.json")
 
     parser.add_argument("--sample-size", "-S",
-                        help="Optional number of input molecules to randomly sample before slicing (0 = use all).", type=int, default=1000)
+                        help="Optional number of input molecules to randomly sample before slicing (0 = use all).", type=int, default=0)
     parser.add_argument("--sample-seed",
                         help="Random seed used when sampling input molecules.", type=int, default=42)
 
@@ -259,6 +268,11 @@ def main():
         with open(args.output_smiles_path, "w+") as smiles_file:
             for row in slice_rows:
                 smiles_file.write("{}\n".format(_to_smiles_rows(row)))
+
+        stats_path = f"{args.output_smiles_path}.stats.txt"
+        with open(stats_path, "w", encoding="utf-8") as stats_file:
+            stats_file.write(f"valid_smiles\t{getattr(slice_db_action, 'valid_molecules', 0)}\n")
+            stats_file.write(f"sliced_entries\t{len(slice_rows)}\n")
 
 
 LOG = ul.get_logger(name="slice_db")
