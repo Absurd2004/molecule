@@ -9,6 +9,7 @@ import argparse
 import os.path
 import glob
 import itertools as it
+import math
 from datetime import datetime
 from pathlib import Path
 
@@ -62,8 +63,14 @@ class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
         log_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir = log_dir
         self._global_step_fn = global_step_fn
+        self.best_validation_loss = None
+        self.best_validation_epoch = None
+        self._epochs_without_improvement = 0
+        self._patience = 6
+        self._best_model_path = Path(self.output_prefix_path).with_name("best.pt")
 
     def run(self, model, training_set, epoch):
+        patience_triggered = False
         if self.collect_stats_frequency > 0 and epoch % self.collect_stats_frequency == 0:
             validation_set = next(self.validation_sets)
             other_values = {"lr": self.get_lr()}
@@ -87,6 +94,7 @@ class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
                         step_value = self._global_step_fn()
                     except Exception:  # pragma: no cover - defensive fallback
                         step_value = epoch
+                patience_triggered = self._update_validation_tracking(stats, model, epoch)
                 wandb.log(stats, step=step_value)
 
         self.lr_scheduler.step(epoch=epoch)
@@ -96,7 +104,7 @@ class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
                 or (self.save_frequency > 0 and (epoch % self.save_frequency == 0)):
             model.save(self._model_path(epoch))
 
-        return not lr_reached_min
+        return not lr_reached_min and not patience_triggered
 
     def get_lr(self):
         return self.lr_scheduler.optimizer.param_groups[0]["lr"]
@@ -105,6 +113,41 @@ class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
         return "{}.{}".format(self.output_prefix_path, epoch)
 
     # writer management removed; logging handled via Weights & Biases
+
+    def _update_validation_tracking(self, stats, model, epoch):
+        val_loss = stats.get("validation_nll_mean")
+        if val_loss is None or not math.isfinite(val_loss):
+            return False
+
+        if self.best_validation_loss is None or val_loss < self.best_validation_loss:
+            self.best_validation_loss = val_loss
+            self.best_validation_epoch = epoch
+            self._epochs_without_improvement = 0
+            self._best_model_path.parent.mkdir(parents=True, exist_ok=True)
+            model.save(str(self._best_model_path))
+            if self.logger:
+                self.logger.info(
+                    "New best validation loss %.6f at epoch %d; model saved to %s",
+                    val_loss,
+                    epoch,
+                    self._best_model_path,
+                )
+            stats["best_validation_epoch"] = epoch
+            stats["best_validation_loss"] = val_loss
+            return False
+
+        self._epochs_without_improvement += 1
+        if self.best_validation_epoch is not None:
+            stats.setdefault("best_validation_epoch", self.best_validation_epoch)
+        if self.best_validation_loss is not None:
+            stats.setdefault("best_validation_loss", self.best_validation_loss)
+        if self._epochs_without_improvement >= self._patience:
+            if self.logger:
+                self.logger.info(
+                    "Early stopping triggered after %d epochs without validation improvement", self._patience
+                )
+            return True
+        return False
 
 
 def main():

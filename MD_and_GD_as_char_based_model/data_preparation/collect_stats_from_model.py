@@ -63,7 +63,7 @@ def add_stats_args(parser, with_prefix=False, with_required=True):  # pylint: di
     _add_arg("max-mols-per-grid", "mg",
              "Maximum number of molecules to include per grid image. Set to 0 to disable. [DEFAULT: 0]", type=int, default=0)
     _add_arg("individual-image-size", "is",
-             "Pixel size for individual molecule images (square). [DEFAULT: 512]", type=int, default=512)
+             "Pixel size for individual molecule images (square). [DEFAULT: 512]", type=int, default=1024)
 
 
 def main():

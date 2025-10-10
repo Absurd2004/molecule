@@ -312,14 +312,14 @@ def join_joined_attachments(scaffold_smi, decorations_smi):
     scaffold_smi = add_attachment_point_numbers(scaffold_smi)
     num_att_points = len(get_attachment_points(scaffold_smi))
     if len(decorations_smi) != num_att_points:
-        print("Number of decorations does not match number of attachment points")
+        #print("Number of decorations does not match number of attachment points")
         return None
 
     mol = uc.to_mol(scaffold_smi)
     for dec in decorations_smi:
         mol = join(to_smiles(mol), dec)
         if not mol:
-            print("Could not join scaffold and decoration")
+            #print("Could not join scaffold and decoration")
             return None
     return mol
 

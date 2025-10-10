@@ -182,6 +182,9 @@ class CollectStatsFromModel(Action):
             print("Validation set is empty; skipping molecule generation")
             return self._merge_other_values()
 
+        print(f"self.sample_size: {self.sample_size}")
+        print(f"len(scaffolds_for_sampling): {len(scaffolds_for_sampling)}")
+
         if self.sample_size and self.sample_size < len(scaffolds_for_sampling):
             scaffolds_for_sampling = scaffolds_for_sampling[:self.sample_size]
 
