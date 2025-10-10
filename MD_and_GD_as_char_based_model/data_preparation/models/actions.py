@@ -106,8 +106,20 @@ class TrainModel(Action):
                 break
 
     def _epoch_iterator(self, dataloader):
+        device = next(self.model.network.parameters()).device
         for scaffold_batch, decorator_batch in dataloader:
-            loss = self.model.likelihood(*scaffold_batch, *decorator_batch).mean()
+            scaffold_seqs, scaffold_seq_lengths = scaffold_batch
+            decoration_seqs, decoration_seq_lengths = decorator_batch
+
+            scaffold_seqs = scaffold_seqs.to(device, non_blocking=True)
+            decoration_seqs = decoration_seqs.to(device, non_blocking=True)
+
+            loss = self.model.likelihood(
+                scaffold_seqs,
+                scaffold_seq_lengths,
+                decoration_seqs,
+                decoration_seq_lengths
+            ).mean()
             #print(f"loss: {loss}")
 
             self.optimizer.zero_grad()
@@ -121,8 +133,14 @@ class TrainModel(Action):
 
     def _initialize_dataloader(self, training_set):
         dataset = md.DecoratorDataset(training_set, vocabulary=self.model.vocabulary)
-        return tud.DataLoader(dataset, batch_size=self.batch_size, shuffle=True,
-                              collate_fn=md.DecoratorDataset.collate_fn, drop_last=True)
+        return tud.DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            collate_fn=md.DecoratorDataset.collate_fn,
+            drop_last=True,
+            pin_memory=True,
+        )
 
 
 class CollectStatsFromModel(Action):
@@ -319,9 +337,12 @@ class SampleModel(Action):
         dataset = md.Dataset(scaffold_list, self.model.vocabulary.scaffold_vocabulary,
                              self.model.vocabulary.scaffold_tokenizer)
         dataloader = tud.DataLoader(dataset, batch_size=self.batch_size,
-                                    shuffle=False, collate_fn=md.Dataset.collate_fn)
+                                    shuffle=False, collate_fn=md.Dataset.collate_fn, pin_memory=True)
+        device = next(self.model.network.parameters()).device
         for batch in dataloader:
-            for scaff, dec, nll in self.model.sample_decorations(*batch):
+            scaffold_seqs, scaffold_seq_lengths = batch
+            scaffold_seqs = scaffold_seqs.to(device, non_blocking=True)
+            for scaff, dec, nll in self.model.sample_decorations(scaffold_seqs, scaffold_seq_lengths):
                 yield scaff, dec, nll
 
 
@@ -347,10 +368,22 @@ class CalculateNLLsFromModel(Action):
         """
         dataset = md.DecoratorDataset(scaffold_decoration_list, self.model.vocabulary)
         dataloader = tud.DataLoader(dataset, batch_size=self.batch_size, collate_fn=md.DecoratorDataset.collate_fn,
-                                    shuffle=False)
+                                    shuffle=False, pin_memory=True)
+        device = next(self.model.network.parameters()).device
         for scaffold_batch, decorator_batch in dataloader:
-            ll_data = self.model.likelihood(*scaffold_batch, *decorator_batch,
-                                            with_attention_weights=self.with_attention_weights)
+            scaffold_seqs, scaffold_seq_lengths = scaffold_batch
+            decoration_seqs, decoration_seq_lengths = decorator_batch
+
+            scaffold_seqs = scaffold_seqs.to(device, non_blocking=True)
+            decoration_seqs = decoration_seqs.to(device, non_blocking=True)
+
+            ll_data = self.model.likelihood(
+                scaffold_seqs,
+                scaffold_seq_lengths,
+                decoration_seqs,
+                decoration_seq_lengths,
+                with_attention_weights=self.with_attention_weights
+            )
             if self.with_attention_weights:
                 data = zip(*[d.data.cpu().numpy() for d in ll_data])
             else:
