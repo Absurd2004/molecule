@@ -110,7 +110,7 @@ class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
         return self.lr_scheduler.optimizer.param_groups[0]["lr"]
 
     def _model_path(self, epoch):
-        return "{}.{}".format(self.output_prefix_path, epoch)
+        return "{}.{}.pt".format(self.output_prefix_path, epoch)
 
     # writer management removed; logging handled via Weights & Biases
 
