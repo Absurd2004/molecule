@@ -11,6 +11,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
+from models.rl_actions import LikelihoodEvaluation, SampleModel
+from dto import SampledSequencesDTO
 
 
 # ---------------------------------------------------------------------------
@@ -104,22 +106,18 @@ class ReinforcementLearning:
 		finalize_run(self.scoring_strategy)
 
 	def _sampling(self) -> Iterable[Any]:
-		return run_sampling(self.sampling_action, self.configuration.scaffolds)
+		sampling_action = SampleModel(self.actor, self.configuration.batch_size, self.logger,
+                                      self.configuration.randomize_scaffolds)
+		sampled_sequences = sampling_action.run(self.configuration.scaffolds)
+		return sampled_sequences
 
-	def _scoring(self, sampled_sequences: Iterable[Any], step: int) -> Any:
-		return run_scoring(self.scoring_strategy, sampled_sequences, step)
+	def _scoring(self, sampled_sequences, step: int):
+		return self.scoring_strategy.evaluate(sampled_sequences, step)
 
 	def _updating(self, sampled_sequences: Iterable[Any], score_summary: Any) -> Tuple[Any, Any, Any]:
-		scaffold_batch, decorator_batch, actor_nlls = run_likelihood_estimation(
-			self.likelihood_evaluator, sampled_sequences
-		)
-		return run_learning_step(
-			self.learning_strategy,
-			scaffold_batch,
-			decorator_batch,
-			score_summary,
-			actor_nlls,
-		)
+		scaffold_batch, decorator_batch, actor_nlls = self._calculate_likelihood(sampled_sequences)
+		actor_nlls, critic_nlls, augmented_nlls = self.learning_strategy.run(scaffold_batch, decorator_batch, score, actor_nlls)
+		return actor_nlls, critic_nlls, augmented_nlls
 
 	def _logging(self, step: int, score_summary: Any, actor_nlls: Any, critic_nlls: Any, augmented_nlls: Any) -> None:
 		run_logging(
@@ -131,6 +129,10 @@ class ReinforcementLearning:
 			critic_nlls=critic_nlls,
 			augmented_nlls=augmented_nlls,
 		)
+	def _calculate_likelihood(self, sampled_sequences: List[SampledSequencesDTO]):
+		nll_calculation_action = LikelihoodEvaluation(self.actor, self.configuration.batch_size, self.logger)
+		encoded_scaffold, encoded_decorators, nlls = nll_calculation_action.run(sampled_sequences)
+		return encoded_scaffold, encoded_decorators, nlls
 
 	@staticmethod
 	def _double_single_scaffold_hack(configuration: ReinforcementLearningConfig) -> ReinforcementLearningConfig:
@@ -190,17 +192,6 @@ def create_scoring_strategy(configuration: ScoringStrategyConfig, logger: Any) -
 	return _ScoringStrategyPlaceholder(configuration, logger)
 
 
-def create_sampling_action(actor: Any, configuration: ReinforcementLearningConfig, logger: Any) -> Any:
-	class _SamplingActionPlaceholder:
-		def __init__(self, model, cfg, log):
-			self.model = model
-			self.config = cfg
-			self.logger = log
-
-		def run(self, scaffold_list: Iterable[str]) -> Iterable[Any]:
-			raise NotImplementedError("Sampling action run() to be implemented")
-
-	return _SamplingActionPlaceholder(actor, configuration, logger)
 
 
 def create_likelihood_evaluator(actor: Any, configuration: ReinforcementLearningConfig, logger: Any) -> Any:
@@ -233,13 +224,10 @@ def finalize_run(scoring_strategy: Any) -> None:
 	raise NotImplementedError("finalize_run needs project-specific implementation")
 
 
-def run_sampling(sampling_action: Any, scaffolds: Iterable[str]) -> Iterable[Any]:
-	raise NotImplementedError("run_sampling needs project-specific implementation")
 
 
 def run_scoring(scoring_strategy: Any, sampled_sequences: Iterable[Any], step: int) -> Any:
-	raise NotImplementedError("run_scoring needs project-specific implementation")
-
+	return scoring_strategy.evaluate(sampled_sequences, step)
 
 def run_likelihood_estimation(likelihood_evaluator: Any, sampled_sequences: Iterable[Any]) -> Tuple[Any, Any, Any]:
 	raise NotImplementedError("run_likelihood_estimation needs project-specific implementation")

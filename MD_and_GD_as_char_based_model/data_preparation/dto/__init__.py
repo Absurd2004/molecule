@@ -1,1 +1,1 @@
-from running_modes.dto.sampled_sequences_dto import SampledSequencesDTO
+from sampled_sequences_dto import SampledSequencesDTO
