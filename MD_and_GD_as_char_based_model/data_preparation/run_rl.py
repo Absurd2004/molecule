@@ -16,6 +16,8 @@ from dto import SampledSequencesDTO
 from configurations.configurations import LearningStrategyConfiguration as LearningStrategyConfig
 from configurations.configurations import ReinforcementLearningConfiguration as ReinforcementLearningConfig
 from configurations.configurations import ScoringStrategyConfiguration as ScoringStrategyConfig
+from learning_strategy.dap_strategy import DAPStrategy
+from scoring_strategy.scoring_strategy import StandardScoringStrategy
 
 
 
@@ -44,16 +46,11 @@ class ReinforcementLearning:
 		self.logger = logger
 
 		self.optimizer = create_optimizer(self.actor, self.configuration)
-		self.learning_strategy = create_learning_strategy(
-			critic=self.critic,
-			optimizer=self.optimizer,
-			configuration=self.configuration.learning_strategy,
-			logger=self.logger,
-		)
-		self.scoring_strategy = create_scoring_strategy(
-			configuration=self.configuration.scoring_strategy,
-			logger=self.logger,
-		)
+		self.learning_strategy = DAPStrategy(self.critic, self.optimizer, self.configuration.learning_strategy, self.logger)
+		self.scoring_strategy = StandardScoringStrategy(
+            configuration=self.configuration.scoring_strategy,
+            logger=self.logger,
+        )
 
 
 
