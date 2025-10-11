@@ -13,45 +13,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 from models.rl_actions import LikelihoodEvaluation, SampleModel
 from dto import SampledSequencesDTO
+from configurations.configurations import LearningStrategyConfiguration as LearningStrategyConfig
+from configurations.configurations import ReinforcementLearningConfiguration as ReinforcementLearningConfig
+from configurations.configurations import ScoringStrategyConfiguration as ScoringStrategyConfig
 
 
-# ---------------------------------------------------------------------------
-# Configuration models
-# ---------------------------------------------------------------------------
 
 
-@dataclass
-class LearningStrategyConfig:
-	"""对齐 Lib-INVENT 的学习策略配置占位符。"""
 
-	name: str
-	parameters: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ScoringStrategyConfig:
-	"""对齐 Lib-INVENT 的评分策略配置占位符。"""
-
-	name: str
-	diversity_filter: Dict[str, Any] = field(default_factory=dict)
-	reaction_filter: Dict[str, Any] = field(default_factory=dict)
-	scoring_function: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ReinforcementLearningConfig:
-	"""与 Lib-INVENT 字段保持一致的强化学习运行配置。"""
-
-	actor: Path
-	critic: Path
-	scaffolds: List[str]
-	learning_strategy: LearningStrategyConfig
-	scoring_strategy: ScoringStrategyConfig
-	output_dir: Path
-	n_steps: int = 1000
-	learning_rate: float = 1e-4
-	batch_size: int = 128
-	randomize_scaffolds: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -85,16 +54,8 @@ class ReinforcementLearning:
 			configuration=self.configuration.scoring_strategy,
 			logger=self.logger,
 		)
-		self.sampling_action = create_sampling_action(
-			actor=self.actor,
-			configuration=self.configuration,
-			logger=self.logger,
-		)
-		self.likelihood_evaluator = create_likelihood_evaluator(
-			actor=self.actor,
-			configuration=self.configuration,
-			logger=self.logger,
-		)
+
+
 
 	def run(self) -> None:
 		start_step = prepare_run(self.configuration, self.logger)
@@ -114,7 +75,7 @@ class ReinforcementLearning:
 	def _scoring(self, sampled_sequences, step: int):
 		return self.scoring_strategy.evaluate(sampled_sequences, step)
 
-	def _updating(self, sampled_sequences: Iterable[Any], score_summary: Any) -> Tuple[Any, Any, Any]:
+	def _updating(self, sampled_sequences: Iterable[Any], score) -> Tuple[Any, Any, Any]:
 		scaffold_batch, decorator_batch, actor_nlls = self._calculate_likelihood(sampled_sequences)
 		actor_nlls, critic_nlls, augmented_nlls = self.learning_strategy.run(scaffold_batch, decorator_batch, score, actor_nlls)
 		return actor_nlls, critic_nlls, augmented_nlls
