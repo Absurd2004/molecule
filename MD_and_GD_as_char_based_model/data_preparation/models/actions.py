@@ -62,7 +62,7 @@ class TrainModelPostEpochHook(Action):
 class TrainModel(Action):
 
     def __init__(self, model, optimizer, training_sets, batch_size, clip_gradient,
-                 epochs, post_epoch_hook=None, logger=None):
+                 epochs, post_epoch_hook=None, logger=None, grad_accum_steps=1):
         """
         Initializes the training of an epoch.
         : param model: A model instance, not loaded in sampling mode.
@@ -80,6 +80,7 @@ class TrainModel(Action):
         self.batch_size = batch_size
         self.epochs = epochs
         self.clip_gradient = clip_gradient
+        self.grad_accum_steps = max(1, int(grad_accum_steps or 1))
 
         if not post_epoch_hook:
             self.post_epoch_hook = TrainModelPostEpochHook(logger=self.logger)
@@ -107,7 +108,9 @@ class TrainModel(Action):
 
     def _epoch_iterator(self, dataloader):
         device = next(self.model.network.parameters()).device
-        for scaffold_batch, decorator_batch in dataloader:
+        total_batches = len(dataloader)
+        self.optimizer.zero_grad()
+        for batch_index, (scaffold_batch, decorator_batch) in enumerate(dataloader, start=1):
             scaffold_seqs, scaffold_seq_lengths = scaffold_batch
             decoration_seqs, decoration_seq_lengths = decorator_batch
 
@@ -122,12 +125,15 @@ class TrainModel(Action):
             ).mean()
             #print(f"loss: {loss}")
 
-            self.optimizer.zero_grad()
-            loss.backward()
-            if self.clip_gradient > 0:
-                tnnu.clip_grad_norm_(self.model.network.parameters(), self.clip_gradient)
+            loss_to_backprop = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
+            loss_to_backprop.backward()
 
-            self.optimizer.step()
+            should_step = (batch_index % self.grad_accum_steps == 0) or (batch_index == total_batches)
+            if should_step:
+                if self.clip_gradient > 0:
+                    tnnu.clip_grad_norm_(self.model.network.parameters(), self.clip_gradient)
+                self.optimizer.step()
+                self.optimizer.zero_grad()
 
             yield loss
 

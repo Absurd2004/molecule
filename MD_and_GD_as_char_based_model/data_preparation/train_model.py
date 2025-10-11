@@ -207,7 +207,8 @@ def main():
     )
 
     epochs_it = ma.TrainModel(model, optimizer, training_sets, params["batch_size"], params["clip_gradients"],
-                              params["epochs"], post_epoch_hook, logger=LOG).run()
+                              params["epochs"], post_epoch_hook, logger=LOG,
+                              grad_accum_steps=params.get("grad_accum_steps", 1)).run()
     try:
         for epoch_num, (total, epoch_it) in enumerate(epochs_it, start=1):
             batch_bar = tqdm(epoch_it, total=total, desc=f"#{epoch_num}", unit="batch")
@@ -301,6 +302,9 @@ def _add_base_args(parser):
     parser.add_argument("--epochs", "-e", help="Number of epochs to train. [DEFAULT: 100]", type=int, default=10)
     parser.add_argument("--batch-size", "-b",
                         help="Number of molecules processed per batch. [DEFAULT: 128]", type=int, default=128)
+    parser.add_argument("--grad-accum-steps", "--gas",
+                        help="Number of mini-batches to accumulate before optimizer step. [DEFAULT: 1]",
+                        type=int, default=1)
     parser.add_argument("--clip-gradients",
                         help="Clip gradients to a given norm. [DEFAULT: 1.0]", type=float, default=1.0)
     parser.add_argument("--collect-stats-frequency", "--csf",

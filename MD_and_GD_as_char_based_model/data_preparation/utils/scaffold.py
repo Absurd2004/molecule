@@ -3,9 +3,13 @@ import itertools
 
 import rdkit.Chem as rkc
 import rdkit.Chem.Descriptors as rkcde
+from typing import List, Tuple
 
 import utils.chem as uc
+import numpy as np
 
+from rdkit.Chem import AllChem, MolFromSmiles, MolToSmiles, MolStandardize, MolToInchiKey
+from rdkit.Chem.rdchem import Mol
 
 class SlicedMol:
 
@@ -432,3 +436,22 @@ def to_smiles(mol, variant="canonical"):
     if smi:
         conv_smi = add_brackets_to_attachment_points(smi)
     return conv_smi
+
+def get_indices_of_unique_smiles(smiles: [str]) -> np.array:
+    """Returns an np.array of indices corresponding to the first entries in a list of smiles strings"""
+    _, idxs = np.unique(smiles, return_index=True)
+    sorted_indices = np.sort(idxs)
+    return sorted_indices
+
+
+def randomize_scaffold_smiles(scaffold_smi: str) -> str | None:
+    """返回带随机原子顺序的 scaffold SMILES（保留 * 接头符号）"""
+    mol = uc.to_mol(scaffold_smi)
+    if mol is None:
+        return None
+
+    randomized = uc.to_smiles(mol, variant="random")
+    if randomized is None:
+        return None
+
+    return add_brackets_to_attachment_points(randomized)
