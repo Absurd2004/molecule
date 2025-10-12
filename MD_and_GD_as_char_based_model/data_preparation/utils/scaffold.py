@@ -455,3 +455,13 @@ def randomize_scaffold_smiles(scaffold_smi: str) -> str | None:
         return None
 
     return add_brackets_to_attachment_points(randomized)
+
+def convert_to_rdkit_smiles(self, smiles: str, allowTautomers=True, sanitize=False, isomericSmiles=False) -> str:
+    """
+    :param smiles: Converts a smiles string into a canonical SMILES string.
+    :type allowTautomers: allows having same molecule represented in different tautomeric forms
+    """
+    if allowTautomers:
+        return MolToSmiles(MolFromSmiles(smiles, sanitize=sanitize), isomericSmiles=isomericSmiles)
+    else:
+        return MolStandardize.canonicalize_tautomer_smiles(smiles)

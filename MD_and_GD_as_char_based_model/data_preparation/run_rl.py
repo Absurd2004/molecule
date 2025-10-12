@@ -18,6 +18,7 @@ from configurations.configurations import ReinforcementLearningConfiguration as 
 from configurations.configurations import ScoringStrategyConfiguration as ScoringStrategyConfig
 from learning_strategy.dap_strategy import DAPStrategy
 from scoring_strategy.scoring_strategy import StandardScoringStrategy
+import time
 
 
 
@@ -55,8 +56,8 @@ class ReinforcementLearning:
 
 
 	def run(self) -> None:
-		start_step = prepare_run(self.configuration, self.logger)
-		for step in range(start_step, self.configuration.n_steps):
+		start_time = time.time()
+		for step in range( self.configuration.n_steps):
 			sampled_sequences = self._sampling()
 			score_summary = self._scoring(sampled_sequences, step)
 			actor_nlls, critic_nlls, augmented_nlls = self._updating(sampled_sequences, score_summary)
@@ -70,23 +71,17 @@ class ReinforcementLearning:
 		return sampled_sequences
 
 	def _scoring(self, sampled_sequences, step: int):
-		return self.scoring_strategy.evaluate(sampled_sequences, step)
+		total_scores, component_scores = self.scoring_strategy.evaluate(sampled_sequences, step)
+		return {"total": total_scores, "components": component_scores}
 
-	def _updating(self, sampled_sequences: Iterable[Any], score) -> Tuple[Any, Any, Any]:
+	def _updating(self, sampled_sequences: Iterable[Any], score_payload: Dict[str, Any]) -> Tuple[Any, Any, Any]:
 		scaffold_batch, decorator_batch, actor_nlls = self._calculate_likelihood(sampled_sequences)
-		actor_nlls, critic_nlls, augmented_nlls = self.learning_strategy.run(scaffold_batch, decorator_batch, score, actor_nlls)
-		return actor_nlls, critic_nlls, augmented_nlls
-
-	def _logging(self, step: int, score_summary: Any, actor_nlls: Any, critic_nlls: Any, augmented_nlls: Any) -> None:
-		run_logging(
-			logger=self.logger,
-			configuration=self.configuration,
-			step=step,
-			score_summary=score_summary,
-			actor_nlls=actor_nlls,
-			critic_nlls=critic_nlls,
-			augmented_nlls=augmented_nlls,
+		total_scores = score_payload["total"]
+		actor_nlls, critic_nlls, augmented_nlls = self.learning_strategy.run(
+			scaffold_batch, decorator_batch, total_scores, actor_nlls
 		)
+		return actor_nlls, critic_nlls, augmented_nlls
+		
 	def _calculate_likelihood(self, sampled_sequences: List[SampledSequencesDTO]):
 		nll_calculation_action = LikelihoodEvaluation(self.actor, self.configuration.batch_size, self.logger)
 		encoded_scaffold, encoded_decorators, nlls = nll_calculation_action.run(sampled_sequences)
@@ -121,48 +116,14 @@ def create_optimizer(actor: Any, configuration: ReinforcementLearningConfig) -> 
 	return torch.optim.Adam(params, lr=configuration.learning_rate)
 
 
-def create_learning_strategy(critic: Any, optimizer: Any, configuration: LearningStrategyConfig, logger: Any) -> Any:
-	class _LearningStrategyPlaceholder:
-		def __init__(self, critic_model, optim, config, log):
-			self.critic_model = critic_model
-			self.optimizer = optim
-			self.config = config
-			self.logger = log
-
-		def run(self, scaffold_batch: Any, decorator_batch: Any, score_summary: Any, actor_nlls: Any):
-			raise NotImplementedError("Learning strategy run() to be implemented")
-
-	return _LearningStrategyPlaceholder(critic, optimizer, configuration, logger)
-
-
-def create_scoring_strategy(configuration: ScoringStrategyConfig, logger: Any) -> Any:
-	class _ScoringStrategyPlaceholder:
-		def __init__(self, config, log):
-			self.config = config
-			self.logger = log
-
-		def evaluate(self, sampled_sequences: Iterable[Any], step: int):
-			raise NotImplementedError("Scoring evaluate() to be implemented")
-
-		def save_filter_memory(self):
-			raise NotImplementedError("Scoring save_filter_memory() to be implemented")
-
-	return _ScoringStrategyPlaceholder(configuration, logger)
 
 
 
 
-def create_likelihood_evaluator(actor: Any, configuration: ReinforcementLearningConfig, logger: Any) -> Any:
-	class _LikelihoodEvaluatorPlaceholder:
-		def __init__(self, model, cfg, log):
-			self.model = model
-			self.config = cfg
-			self.logger = log
 
-		def run(self, sampled_sequences: Iterable[Any]) -> Tuple[Any, Any, Any]:
-			raise NotImplementedError("Likelihood evaluator run() to be implemented")
 
-	return _LikelihoodEvaluatorPlaceholder(actor, configuration, logger)
+
+
 
 
 def create_logger(configuration: ReinforcementLearningConfig) -> Any:
@@ -182,35 +143,6 @@ def finalize_run(scoring_strategy: Any) -> None:
 	raise NotImplementedError("finalize_run needs project-specific implementation")
 
 
-
-
-def run_scoring(scoring_strategy: Any, sampled_sequences: Iterable[Any], step: int) -> Any:
-	return scoring_strategy.evaluate(sampled_sequences, step)
-
-def run_likelihood_estimation(likelihood_evaluator: Any, sampled_sequences: Iterable[Any]) -> Tuple[Any, Any, Any]:
-	raise NotImplementedError("run_likelihood_estimation needs project-specific implementation")
-
-
-def run_learning_step(
-	learning_strategy: Any,
-	scaffold_batch: Any,
-	decorator_batch: Any,
-	score_summary: Any,
-	actor_nlls: Any,
-) -> Tuple[Any, Any, Any]:
-	raise NotImplementedError("run_learning_step needs project-specific implementation")
-
-
-def run_logging(
-	logger: Any,
-	configuration: ReinforcementLearningConfig,
-	step: int,
-	score_summary: Any,
-	actor_nlls: Any,
-	critic_nlls: Any,
-	augmented_nlls: Any,
-) -> None:
-	raise NotImplementedError("run_logging needs project-specific implementation")
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +181,6 @@ def build_configuration(raw_config: Dict[str, Any]) -> ReinforcementLearningConf
 	scoring_strategy = ScoringStrategyConfig(
 		name=raw_config.get("scoring_strategy", {}).get("name", ""),
 		diversity_filter=raw_config.get("scoring_strategy", {}).get("diversity_filter", {}),
-		reaction_filter=raw_config.get("scoring_strategy", {}).get("reaction_filter", {}),
 		scoring_function=raw_config.get("scoring_strategy", {}).get("scoring_function", {}),
 	)
 

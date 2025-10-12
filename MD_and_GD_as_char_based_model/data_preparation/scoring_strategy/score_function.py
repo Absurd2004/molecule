@@ -42,20 +42,12 @@ class sa_func():
 
 
 def composite_qed_sa_score(smiles_list, weights=(1.0, 1.0)):
-    """Combine QED and SA scores into a single 0-1 desirability score.
-
-    Args:
-        smiles_list: Iterable of SMILES strings.
-        weights: Tuple (w_qed, w_sa) controlling the contribution of each component.
-
-    Returns:
-        numpy.ndarray: Weighted score per input SMILES, float32 in [0, 1].
-    """
+    """Combine QED and SA scores into a single 0-1 desirability score while exposing components."""
 
     qed_scores = qed_func()(smiles_list)
     sa_scores = sa_func()(smiles_list)
 
-    qed_transformed = np.where(qed_scores >= 0.4, 1.0, qed_scores)
+    qed_transformed = np.where(qed_scores >= 0.4, 1.0, qed_scores).astype(np.float32)
 
     sa_transformed = np.ones_like(sa_scores, dtype=np.float32)
     mask = sa_scores > 4.0
@@ -66,4 +58,8 @@ def composite_qed_sa_score(smiles_list, weights=(1.0, 1.0)):
     w_qed, w_sa = weights
     weight_sum = w_qed + w_sa if (w_qed + w_sa) != 0 else 1.0
     combined = (w_qed * qed_transformed + w_sa * sa_transformed) / weight_sum
-    return combined.astype(np.float32)
+    component_scores = {
+        "qed": qed_transformed.astype(np.float32),
+        "sa": sa_transformed.astype(np.float32),
+    }
+    return combined.astype(np.float32), component_scores

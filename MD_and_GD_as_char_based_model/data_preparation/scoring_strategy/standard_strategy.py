@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -9,7 +9,7 @@ import utils.chem as uc
 from dto import SampledSequencesDTO
 from scoring_strategy.base_scoring_strategy import BaseScoringStrategy
 from configurations.configurations import ScoringStrategyConfiguration
-from utils.scaffold import join_joined_attachments, to_smiles
+from utils.scaffold import join_joined_attachments
 from scoring_strategy.score_function import composite_qed_sa_score
 
 class StandardScoringStrategy(BaseScoringStrategy):
@@ -18,17 +18,17 @@ class StandardScoringStrategy(BaseScoringStrategy):
         weights = getattr(strategy_configuration, "scoring_function", {}) or {}
         self._component_weights: Tuple[float, float] = tuple(weights.get("weights", (1.0, 1.0)))
     
-    def evaluate(self, sampled_sequences: List[SampledSequencesDTO], step) -> np.ndarray:
-        scores = self._apply_scoring_function(sampled_sequences)
+    def evaluate(self, sampled_sequences: List[SampledSequencesDTO], step) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+        total_scores, component_scores = self._apply_scoring_function(sampled_sequences)
         if hasattr(self.diversity_filter, "update_score"):
-            scores = self.diversity_filter.update_score(scores, sampled_sequences, step)
-        return scores
+            total_scores = self.diversity_filter.update_score(total_scores, sampled_sequences, step)
+        return total_scores, component_scores
     
-    def _apply_scoring_function(self, sampled_sequences: List[SampledSequencesDTO]) -> np.ndarray:
+    def _apply_scoring_function(self, sampled_sequences: List[SampledSequencesDTO]) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         molecules = [
             join_joined_attachments(sample.scaffold, sample.decoration)
             for sample in sampled_sequences
         ]
         smiles = [uc.to_smiles(molecule) if molecule else "INVALID" for molecule in molecules]
-        final_score = composite_qed_sa_score(smiles, weights=self._component_weights)
-        return np.asarray(final_score)
+        total_score, component_scores = composite_qed_sa_score(smiles, weights=self._component_weights)
+        return np.asarray(total_score), component_scores
