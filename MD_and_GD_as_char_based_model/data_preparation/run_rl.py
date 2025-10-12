@@ -18,6 +18,7 @@ from configurations.configurations import ReinforcementLearningConfiguration as 
 from configurations.configurations import ScoringStrategyConfiguration as ScoringStrategyConfig
 from learning_strategy.dap_strategy import DAPStrategy
 from scoring_strategy.scoring_strategy import StandardScoringStrategy
+from scoring_strategy.summary import ScoreSummary
 import time
 
 
@@ -61,7 +62,6 @@ class ReinforcementLearning:
 			sampled_sequences = self._sampling()
 			score_summary = self._scoring(sampled_sequences, step)
 			actor_nlls, critic_nlls, augmented_nlls = self._updating(sampled_sequences, score_summary)
-			self._logging(step, score_summary, actor_nlls, critic_nlls, augmented_nlls)
 		finalize_run(self.scoring_strategy)
 
 	def _sampling(self) -> Iterable[Any]:
@@ -70,13 +70,12 @@ class ReinforcementLearning:
 		sampled_sequences = sampling_action.run(self.configuration.scaffolds)
 		return sampled_sequences
 
-	def _scoring(self, sampled_sequences, step: int):
-		total_scores, component_scores = self.scoring_strategy.evaluate(sampled_sequences, step)
-		return {"total": total_scores, "components": component_scores}
+	def _scoring(self, sampled_sequences, step: int) -> ScoreSummary:
+		return self.scoring_strategy.evaluate(sampled_sequences, step)
 
-	def _updating(self, sampled_sequences: Iterable[Any], score_payload: Dict[str, Any]) -> Tuple[Any, Any, Any]:
+	def _updating(self, sampled_sequences: Iterable[Any], score_summary: ScoreSummary) -> Tuple[Any, Any, Any]:
 		scaffold_batch, decorator_batch, actor_nlls = self._calculate_likelihood(sampled_sequences)
-		total_scores = score_payload["total"]
+		total_scores = score_summary.total_score
 		actor_nlls, critic_nlls, augmented_nlls = self.learning_strategy.run(
 			scaffold_batch, decorator_batch, total_scores, actor_nlls
 		)
