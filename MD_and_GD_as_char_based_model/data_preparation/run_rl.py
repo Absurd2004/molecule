@@ -20,7 +20,8 @@ from learning_strategy.dap_strategy import DAPStrategy
 from scoring_strategy.scoring_strategy import StandardScoringStrategy
 from scoring_strategy.summary import ScoreSummary
 import time
-
+import models.actions as ma
+import models.model as mm
 
 
 
@@ -50,19 +51,20 @@ class ReinforcementLearning:
 		self.optimizer = create_optimizer(self.actor, self.configuration)
 		self.learning_strategy = DAPStrategy(self.critic, self.optimizer, self.configuration.learning_strategy, self.logger)
 		self.scoring_strategy = StandardScoringStrategy(
-            configuration=self.configuration.scoring_strategy,
+            strategy_configuration=self.configuration.scoring_strategy,
             logger=self.logger,
         )
 
 
 
 	def run(self) -> None:
+		assert False,"check befor rl"
 		start_time = time.time()
 		for step in range( self.configuration.n_steps):
 			sampled_sequences = self._sampling()
 			score_summary = self._scoring(sampled_sequences, step)
 			actor_nlls, critic_nlls, augmented_nlls = self._updating(sampled_sequences, score_summary)
-		finalize_run(self.scoring_strategy)
+		#finalize_run(self.scoring_strategy)
 
 	def _sampling(self) -> Iterable[Any]:
 		sampling_action = SampleModel(self.actor, self.configuration.batch_size, self.logger,
@@ -154,7 +156,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--config",
 		type=Path,
-		required=True,
+		default = "./configs/rl_configs.json",
 		help="Path to a JSON configuration file describing the RL run.",
 	)
 	return parser.parse_args()
@@ -220,8 +222,10 @@ def load_models(configuration: ReinforcementLearningConfig) -> Tuple[Any, Any]:
 
 
 def load_model_from_checkpoint(checkpoint_path: Path, mode: str) -> Any:
-	raise NotImplementedError("load_model_from_checkpoint needs project-specific implementation")
+	"""从 checkpoint 加载模型的占位函数。"""
 
+	model = mm.DecoratorModel.load_from_file(checkpoint_path,mode=mode)
+	return model
 
 # ---------------------------------------------------------------------------
 # Main entry
@@ -232,7 +236,8 @@ def main() -> None:
 	args = parse_args()
 	raw_config = load_raw_config(args.config)
 	configuration = build_configuration(raw_config)
-	logger = create_logger(configuration)
+	#logger = create_logger(configuration)
+	logger = None
 	actor, critic = load_models(configuration)
 	rl_runner = ReinforcementLearning(actor=actor, critic=critic, configuration=configuration, logger=logger)
 	rl_runner.run()

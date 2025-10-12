@@ -15,7 +15,7 @@ class BaseScoringStrategy(ABC):
 
         self.diversity_filter = DiversityFilter(strategy_configuration.diversity_filter)
 
-        self.scoring_function = ""
+        #self.scoring_function = ""
         self.logger = logger
 
     @abstractmethod

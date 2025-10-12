@@ -444,7 +444,7 @@ def get_indices_of_unique_smiles(smiles: [str]) -> np.array:
     return sorted_indices
 
 
-def randomize_scaffold_smiles(scaffold_smi: str) -> str | None:
+def randomize_scaffold_smiles(scaffold_smi: str):
     """返回带随机原子顺序的 scaffold SMILES（保留 * 接头符号）"""
     mol = uc.to_mol(scaffold_smi)
     if mol is None:

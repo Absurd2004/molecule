@@ -1,0 +1,34 @@
+{
+  "actor": "./pretrained_models/rl/best.pt",
+  "critic": "./pretrained_models/rl/best.pt",
+  "scaffolds": [
+    "[nH]1c2c([*])c3nc(c([*])c4[nH]c(cc4)c([*])c4nc(c([*])c1cc2)C=C4)C=C3",
+    "c1c2c([*])c3nc(c([*])c4ccc(c([*])c5nc(c([*])c([nH]2)c1)CC5)[nH]4)CC3"
+  ],
+  "n_steps": 1000,
+  "learning_rate": 0.0001,
+  "batch_size": 128,
+  "randomize_scaffolds": false,
+  "output_dir": "./rl_runs",
+  "learning_strategy": {
+    "name": "dap",
+    "parameters": {
+      "sigma": 120
+    }
+  },
+  "scoring_strategy": {
+    "name": "standard",
+    "scoring_function": {
+      "weights": [
+        1.0,
+        1.0
+      ]
+    },
+    "diversity_filter": {
+      "name": "no_filter_with_penalty",
+      "minscore": 0.8,
+      "bucket_size": 25,
+      "minsimilarity": 0.4
+    }
+  }
+}

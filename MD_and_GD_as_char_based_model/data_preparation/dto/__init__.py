@@ -1,1 +1,1 @@
-from sampled_sequences_dto import SampledSequencesDTO
+from dto.sampled_sequences_dto import SampledSequencesDTO

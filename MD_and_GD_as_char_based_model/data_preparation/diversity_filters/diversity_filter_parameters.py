@@ -4,6 +4,6 @@ from dataclasses import dataclass
 @dataclass
 class DiversityFilterParameters:
     name: str
-    minscore: float = 0.4
+    minscore: float = 0.8
     bucket_size: int = 25
     minsimilarity: float = 0.4

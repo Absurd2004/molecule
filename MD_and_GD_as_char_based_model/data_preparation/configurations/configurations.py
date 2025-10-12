@@ -1,5 +1,7 @@
 from typing import Any, Dict, Iterable, List, Tuple
 from dataclasses import dataclass
+from diversity_filters.diversity_filter_memory import DiversityFilterMemory
+from diversity_filters.diversity_filter_parameters import DiversityFilterParameters
 
 @dataclass
 class LearningStrategyConfiguration:
@@ -13,8 +15,8 @@ class LearningStrategyConfiguration:
 @dataclass
 class ScoringStrategyConfiguration:
     diversity_filter: DiversityFilterParameters
-    scoring_function: ScoringFuncionParameters
     name: str
+    scoring_function: Dict[str, Any]
 
 
 @dataclass
@@ -24,6 +26,7 @@ class ReinforcementLearningConfiguration:
     scaffolds: List[str]
     learning_strategy: LearningStrategyConfiguration
     scoring_strategy: ScoringStrategyConfiguration
+    output_dir: str
     n_steps: int = 1000
     learning_rate: float = 0.0001
     batch_size: int = 128
