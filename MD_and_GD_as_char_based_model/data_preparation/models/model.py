@@ -133,4 +133,6 @@ class DecoratorModel:
         decoration_smiles = [self.vocabulary.decode_decoration(seq)
                              for seq in torch.cat(sequences, 1).data.cpu().numpy()]
         scaffold_smiles = [self.vocabulary.decode_scaffold(seq) for seq in scaffold_seqs.data.cpu().numpy()]
+        #print(f"scaffold_smiles: {scaffold_smiles}")
+        #print(f"decoration_smiles: {decoration_smiles}")
         return zip(scaffold_smiles, decoration_smiles, nlls.data.cpu().numpy().tolist())

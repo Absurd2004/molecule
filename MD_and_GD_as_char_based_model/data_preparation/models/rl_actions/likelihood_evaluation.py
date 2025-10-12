@@ -24,7 +24,17 @@ class LikelihoodEvaluation(BaseAction):
         dataloader = tud.DataLoader(dataset, batch_size=len(dataset), collate_fn=DecoratorDataset.collate_fn,
                                     shuffle=False)
         
+        device = next(self.model.network.parameters()).device
         for scaffold_batch, decorator_batch in dataloader:
+            scaffold_padded, scaffold_lengths = scaffold_batch
+            decorator_padded, decorator_lengths = decorator_batch
+
+            scaffold_batch = (scaffold_padded.to(device), scaffold_lengths)
+            decorator_batch = (decorator_padded.to(device), decorator_lengths)
+
             nll = self.model.likelihood(*scaffold_batch, *decorator_batch)
+            #print(f"Calculated NLLs for batch of size {scaffold_batch[0].size(0)}")
+            #print(f"NLLs: {nll}")
+            #assert False, "check nll"
             return scaffold_batch, decorator_batch, nll
 

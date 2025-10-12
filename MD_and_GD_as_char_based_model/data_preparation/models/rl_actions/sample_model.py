@@ -30,14 +30,24 @@ class SampleModel(BaseAction):
         """
         scaffold_list = self._randomize_scaffolds(scaffold_list) if self._randomize else scaffold_list
         clean_scaffolds = [remove_attachment_point_numbers(scaffold) for scaffold in scaffold_list]
+        #print(f"Sampling {len(clean_scaffolds)} scaffolds")
+        #print(f"all scaffolds: {clean_scaffolds}")
         dataset = md.Dataset(clean_scaffolds, self.model.vocabulary.scaffold_vocabulary,
                              self.model.vocabulary.scaffold_tokenizer)
         dataloader = tud.DataLoader(dataset, batch_size=len(dataset), shuffle=False, collate_fn=md.Dataset.collate_fn)
+
+        device = next(self.model.network.parameters()).device
         for batch in dataloader:
+            scaffold_batch, length_batch = batch
+            scaffold_batch = scaffold_batch.to(device)
+            batch = (scaffold_batch, length_batch)
             sampled_sequences = []
 
             for _ in range(self._batch_size):
                 packed = self.model.sample_decorations(*batch)
+                #print(f"Sampled {len(packed)} decorations")
+                #print(f"all decorations: {packed}")
+                #assert False
                 for scaffold, decoration, nll in packed:
                     sampled_sequences.append(SampledSequencesDTO(scaffold, decoration, nll))
                 

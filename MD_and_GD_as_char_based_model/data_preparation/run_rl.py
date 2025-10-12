@@ -58,18 +58,23 @@ class ReinforcementLearning:
 
 
 	def run(self) -> None:
-		assert False,"check befor rl"
+		#assert False,"check befor rl"
+		print(f"Running RL with {len(self.configuration.scaffolds)} scaffolds")
 		start_time = time.time()
 		for step in range( self.configuration.n_steps):
 			sampled_sequences = self._sampling()
+			#assert False,"check after sampling"
 			score_summary = self._scoring(sampled_sequences, step)
 			actor_nlls, critic_nlls, augmented_nlls = self._updating(sampled_sequences, score_summary)
+			#assert False,"check after updating"
 		#finalize_run(self.scoring_strategy)
 
 	def _sampling(self) -> Iterable[Any]:
 		sampling_action = SampleModel(self.actor, self.configuration.batch_size, self.logger,
                                       self.configuration.randomize_scaffolds)
+		print(f"start sampling {self.configuration.batch_size} sequences")
 		sampled_sequences = sampling_action.run(self.configuration.scaffolds)
+		print(f"sampled {len(sampled_sequences)} sequences")
 		return sampled_sequences
 
 	def _scoring(self, sampled_sequences, step: int) -> ScoreSummary:

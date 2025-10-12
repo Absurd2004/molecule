@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--smiles",
         "-s",
-        default="[nH]1c2c([*])c3nc(c([*])c4[nH]c(cc4)c([*])c4nc(c([*])c1cc2)C=C4)C=C3",
+        default="[*:0]c1ccc(C=Cc2cc[n+](CCCCCCCC[n+]3ccc(C=Cc4ccc([*:1])s4)cc3)cc2)s1",
         help="SMILES string to validate.",
     )
     parser.add_argument(

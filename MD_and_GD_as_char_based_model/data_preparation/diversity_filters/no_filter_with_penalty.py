@@ -27,6 +27,7 @@ class NoFilterWithPenalty(BaseDiversityFilter):
             smiles[i] = convert_to_rdkit_smiles(smiles[i])
             scores[i] = 0.5*scores[i] if self._smiles_exists(smiles[i]) else scores[i]
 
+
         for i in score_summary.valid_idxs:
             if scores[i] >= self.parameters.minscore:
                 decorations = f'{sampled_sequences[i].scaffold}|{sampled_sequences[i].decoration}'
