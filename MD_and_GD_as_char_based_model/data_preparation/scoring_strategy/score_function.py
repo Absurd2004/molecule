@@ -1,10 +1,42 @@
+from __future__ import annotations
+
+import json
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 from rdkit import Chem
+from rdkit import DataStructs
 from rdkit import rdBase
 from rdkit.Chem import AllChem
-from rdkit import DataStructs
 import rdkit.Chem.QED as QED
 from rdkit.Contrib.SA_Score import sascorer
+
+from prediction_model.kagnn_gap_predictor import KAGnnGapPredictor
+
+
+_KAGNN_CACHE: Dict[str, Optional[KAGnnGapPredictor]] = {"predictor": None, "fingerprint": None}
+
+
+def _fingerprint_config(config: Optional[Dict[str, object]]) -> str:
+    if not config:
+        return "__default__"
+    try:
+        return json.dumps(config, sort_keys=True, default=str)
+    except TypeError:
+        return str(sorted(config.items()))
+
+
+def _get_kagnn_predictor(config: Optional[Dict[str, object]]) -> KAGnnGapPredictor:
+    fingerprint = _fingerprint_config(config)
+    cached_fingerprint = _KAGNN_CACHE.get("fingerprint")
+    predictor = _KAGNN_CACHE.get("predictor")
+    if predictor is None or cached_fingerprint != fingerprint:
+        predictor = KAGnnGapPredictor(config)
+        _KAGNN_CACHE["predictor"] = predictor
+        _KAGNN_CACHE["fingerprint"] = fingerprint
+    return predictor  # type: ignore[return-value]
+
+
 
 class qed_func():
 
@@ -62,4 +94,61 @@ def composite_qed_sa_score(smiles_list, weights=(1.0, 1.0)):
         "qed": qed_transformed.astype(np.float32),
         "sa": sa_transformed.astype(np.float32),
     }
+    return combined.astype(np.float32), component_scores
+
+
+def multiple_score(
+    smiles_list: List[str],
+    weights: Tuple[float, ...] | List[float] = (1.0,),
+    config: Optional[Dict[str, object]] = None,
+    predictor: Optional[KAGnnGapPredictor] = None,
+) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+    """General scorer pipeline backed by KA-GNN ST Gap results.
+
+    The current implementation exposes a single component (normalized ST Gap),
+    but follows the same weighted aggregation pattern as `composite_qed_sa_score`.
+    """
+
+    cfg = dict(config or {})
+    predictor = predictor or _get_kagnn_predictor(cfg)
+    if predictor is None:
+        raise RuntimeError("KA-GNN predictor could not be initialized")
+
+    raw_scores = predictor.score(smiles_list).astype(np.float32)
+    print(f"raw_scores: {raw_scores}")
+    finite_mask = np.isfinite(raw_scores)
+
+    scale = float(cfg.get("scale", 1.0))
+    scale = max(scale, 1e-6)
+
+    normalized = np.zeros_like(raw_scores, dtype=np.float32)
+    if np.any(finite_mask):
+        gaps = np.maximum(raw_scores[finite_mask], 0.0)
+        normalized[finite_mask] = 1.0 / (1.0 + gaps / scale)
+
+    fallback = float(cfg.get("invalid_value", 0.0))
+    normalized[~finite_mask] = fallback
+
+    component_scores = {
+        "st_gap": normalized.astype(np.float32),
+        "st_gap_raw": np.where(finite_mask, raw_scores, fallback).astype(np.float32),
+    }
+
+    weight_list = [float(w) for w in (weights if isinstance(weights, (list, tuple)) else (weights,))]
+
+    weighted_sum = np.zeros_like(normalized, dtype=np.float32)
+    total_weight = 0.0
+    primary_components = [name for name in component_scores if not name.endswith("_raw")]
+
+    for idx, name in enumerate(primary_components):
+        weight = weight_list[idx] if idx < len(weight_list) else 0.0
+        if weight == 0.0:
+            continue
+        weighted_sum += weight * component_scores[name]
+        total_weight += weight
+
+    if total_weight == 0.0:
+        return component_scores["st_gap"], component_scores
+
+    combined = weighted_sum / total_weight
     return combined.astype(np.float32), component_scores
