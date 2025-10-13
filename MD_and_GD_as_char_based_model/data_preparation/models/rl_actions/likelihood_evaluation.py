@@ -20,12 +20,18 @@ class LikelihoodEvaluation(BaseAction):
     
     def run(self, scaffold_decoration_list: List[SampledSequencesDTO]):
         scaffold_decoration_list = [[ss.scaffold, ss.decoration] for ss in scaffold_decoration_list]
+        original_count = len(scaffold_decoration_list)
         dataset = DecoratorDataset(scaffold_decoration_list, self.model.vocabulary)
+        encoded_count = len(dataset)
+        assert encoded_count == original_count, (
+            f"Encoded dataset size mismatch: original {original_count} vs encoded {encoded_count}. "
+            "This suggests some scaffolds or decorations failed to encode."
+        )
         dataloader = tud.DataLoader(dataset, batch_size=len(dataset), collate_fn=DecoratorDataset.collate_fn,
                                     shuffle=False)
         
         device = next(self.model.network.parameters()).device
-        print(f"Calculating NLLs on device: {device}")
+        
         for scaffold_batch, decorator_batch in dataloader:
             scaffold_padded, scaffold_lengths = scaffold_batch
             decorator_padded, decorator_lengths = decorator_batch

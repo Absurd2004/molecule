@@ -21,6 +21,7 @@ class DAPStrategy(BaseLearningStrategy):
         negative_critic_nlls = -critic_nlls
         negative_actor_nlls = -actor_nlls
         augmented_nlls = negative_critic_nlls + self._sigma * self._to_tensor(score)
+        assert augmented_nlls.size() == negative_actor_nlls.size(),f"Size mismatch: augmented_nlls {augmented_nlls.size()} vs negative_actor_nlls {negative_actor_nlls.size()}"
         #print(f"score: {score}")
         #print(f"self.sigma: {self._sigma}")
         #print(f"Augmented NLLs: {augmented_nlls}")

@@ -9,7 +9,7 @@ from dto import SampledSequencesDTO
 from utils.scaffold import remove_attachment_point_numbers,get_indices_of_unique_smiles,randomize_scaffold_smiles
 
 class SampleModel(BaseAction):
-    def __init__(self, model, batch_size: int, logger=None, randomize=False, sample_uniquely=True):
+    def __init__(self, model, batch_size: int, logger=None, randomize=False, sample_uniquely=False):
         """
         Creates an instance of SampleModel.
         :params model: A model instance (better in scaffold_decorating mode).
