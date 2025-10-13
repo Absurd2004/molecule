@@ -23,11 +23,16 @@ class BaseLearningStrategy(ABC):
         loss, negative_actor_nlls, negative_critic_nlls, augmented_nlls = \
             self._calculate_loss(scaffold_batch, decorator_batch, score, actor_nlls)
 
+        if hasattr(loss, "detach"):
+            loss_value = float(loss.detach().cpu().item())
+        else:
+            loss_value = float(loss)
+
         self.optimizer.zero_grad()
         loss.backward()
 
         self.optimizer.step()
-        return negative_actor_nlls, negative_critic_nlls, augmented_nlls
+        return loss_value, negative_actor_nlls, negative_critic_nlls, augmented_nlls
 
     @abstractmethod
     def _calculate_loss(self, scaffold_batch, decorator_batch, score, actor_nlls):

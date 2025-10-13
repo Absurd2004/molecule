@@ -1,5 +1,5 @@
 from typing import Any, Dict, Iterable, List, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from diversity_filters.diversity_filter_memory import DiversityFilterMemory
 from diversity_filters.diversity_filter_parameters import DiversityFilterParameters
 
@@ -31,3 +31,4 @@ class ReinforcementLearningConfiguration:
     learning_rate: float = 0.0001
     batch_size: int = 128
     randomize_scaffolds: bool = False
+    wandb: Dict[str, Any] = field(default_factory=dict)
