@@ -9,6 +9,10 @@
   "batch_size": 32,
   "randomize_scaffolds": false,
   "output_dir": "./rl_runs",
+  "wandb": {
+    "project": "molecule-rl",
+    "run_name": "md-gd-baseline"
+  },
   "learning_strategy": {
     "name": "dap",
     "parameters": {
