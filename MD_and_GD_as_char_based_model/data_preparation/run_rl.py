@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+from datetime import datetime
 from dataclasses import dataclass, field, asdict
 import importlib
 from pathlib import Path
@@ -270,22 +271,26 @@ class ReinforcementLearning:
 		if memory is None:
 			return
 
+		columns: List[str] = []
 		if hasattr(memory, "to_dict"):
 			records = memory.to_dict(orient="records")
+			columns = list(getattr(memory, "columns", []))
 		elif isinstance(memory, list):
 			records = [dict(row) for row in memory]
 		else:
 			records = []
 
-		if not records:
-			return
-
 		output_dir = Path(self.configuration.output_dir)
 		output_dir.mkdir(parents=True, exist_ok=True)
 		output_file = output_dir / "diversity_memory.csv"
-		field_names = sorted({key for record in records for key in record.keys()})
+
+		if not columns:
+			columns = sorted({key for record in records for key in record.keys()})
+		if not columns:
+			columns = ["SMILES"]
+
 		with output_file.open("w", encoding="utf-8", newline="") as handle:
-			writer = csv.DictWriter(handle, fieldnames=field_names)
+			writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
 			writer.writeheader()
 			for record in records:
 				writer.writerow(record)
@@ -462,6 +467,7 @@ def load_models(configuration: ReinforcementLearningConfig) -> Tuple[Any, Any]:
 
 	actor = load_model_from_checkpoint(configuration.actor, mode="train")
 	critic = load_model_from_checkpoint(configuration.critic, mode="eval")
+
 	return actor, critic
 
 
@@ -482,6 +488,12 @@ def main() -> None:
 	configuration = build_configuration(raw_config)
 	#logger = create_logger(configuration)
 	logger = None
+	timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+	base_output_dir = Path(configuration.output_dir).expanduser()
+	timestamped_dir = base_output_dir / timestamp
+	timestamped_dir.mkdir(parents=True, exist_ok=True)
+	configuration.output_dir = str(timestamped_dir)
+	print(f"RL artifacts will be saved to {configuration.output_dir}")
 	wandb_run = None
 	try:
 		wandb_run = init_wandb_run(configuration)

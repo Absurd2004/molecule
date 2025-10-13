@@ -25,6 +25,7 @@ class LikelihoodEvaluation(BaseAction):
                                     shuffle=False)
         
         device = next(self.model.network.parameters()).device
+        print(f"Calculating NLLs on device: {device}")
         for scaffold_batch, decorator_batch in dataloader:
             scaffold_padded, scaffold_lengths = scaffold_batch
             decorator_padded, decorator_lengths = decorator_batch
