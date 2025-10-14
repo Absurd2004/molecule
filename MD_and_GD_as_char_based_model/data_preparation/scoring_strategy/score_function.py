@@ -164,7 +164,12 @@ def multiple_score(
         if mol is None:
             continue
         formal_charge = Chem.GetFormalCharge(mol)
-        charge_scores[idx] = 1.0 if (formal_charge > 0 and formal_charge % 2 == 0) else 0.5
+        if formal_charge == 0:
+            charge_scores[idx] = 0.0
+        elif formal_charge % 2 == 0:
+            charge_scores[idx] = 1.0
+        else:
+            charge_scores[idx] = 0.5
         symmetry_scores[idx] = _average_decoration_similarity(decoration)
     print(f"charge_scores: {charge_scores}")
     print(f"symmetry_scores: {symmetry_scores}")
