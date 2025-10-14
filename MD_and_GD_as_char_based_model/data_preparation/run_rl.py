@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
+import random
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
 import importlib
@@ -27,6 +29,7 @@ import time
 import models.actions as ma
 import models.model as mm
 import wandb
+import torch
 
 
 
@@ -36,6 +39,18 @@ import wandb
 # ---------------------------------------------------------------------------
 # Reinforcement-learning runner (结构占位)
 # ---------------------------------------------------------------------------
+
+def set_seed(seed):
+	os.environ["PYTHONHASHSEED"] = str(seed)
+	random.seed(seed)
+	np.random.seed(seed)
+	torch.manual_seed(seed)
+	if torch.cuda.is_available():
+		torch.cuda.manual_seed(seed)
+		torch.cuda.manual_seed_all(seed)
+	torch.backends.cudnn.deterministic = True
+	torch.backends.cudnn.benchmark = False
+
 
 
 class ReinforcementLearning:
@@ -88,6 +103,8 @@ class ReinforcementLearning:
 				step_duration=step_end - step_start,
 				total_elapsed=step_end - start_time,
 			)
+			if (step + 1) % 10 == 0:
+				self._export_diversity_memory()
 		#finalize_run(self.scoring_strategy)
 		self._export_diversity_memory()
 
@@ -366,6 +383,12 @@ def parse_args() -> argparse.Namespace:
 		default = "./configs/rl_configs.json",
 		help="Path to a JSON configuration file describing the RL run.",
 	)
+	parser.add_argument(
+		"--seed",
+		type=int,
+		default=42,
+		help="Random seed for reproducibility.",
+	)
 	return parser.parse_args()
 
 
@@ -484,6 +507,7 @@ def load_model_from_checkpoint(checkpoint_path: Path, mode: str) -> Any:
 
 def main() -> None:
 	args = parse_args()
+	set_seed(args.seed)
 	raw_config = load_raw_config(args.config)
 	configuration = build_configuration(raw_config)
 	#logger = create_logger(configuration)

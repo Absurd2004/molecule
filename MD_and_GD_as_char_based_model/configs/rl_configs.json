@@ -2,7 +2,7 @@
   "actor": "./pretrained_models/rl/best.pt",
   "critic": "./pretrained_models/rl/best.pt",
   "scaffolds": [
-    "[*:0]c1c(C)cc(C)c(-c2cc(-c3c(C)cc(C)c([*:1])c3C)cc([SH](=O)=O)c2)c1C"
+    "[*:0]c1ccc2c(c1)C(CCCCCC)(CCCCCC)c1cc([*:1])ccc1-2"
   ],
   "n_steps": 1000,
   "learning_rate": 0.0001,
@@ -28,11 +28,11 @@
       ],
       "scale": 1.0,
       "invalid_value": 0.0,
-      "model_path":"./prediction_model/KA-GNN/pretrained_models/best.pth"
+      "model_path":"./prediction_model/pretrained_models/best.pth"
     },
     "diversity_filter": {
       "name": "no_filter_with_penalty",
-      "minscore": 0.75,
+      "minscore": 7.7,
       "bucket_size": 25,
       "minsimilarity": 0.4
     }
