@@ -139,6 +139,8 @@ class KAGnnGapPredictor:
             print(f"[KA-GNN] missing keys: {missing}")
         if unexpected:
             print(f"[KA-GNN] unexpected keys: {unexpected}")
+        
+        print(f"KA-GNN loaded model from {self._model_path} on {self._device}")
 
         model.to(self._device)
         model.eval()
@@ -203,6 +205,7 @@ class KAGnnGapPredictor:
             outputs = self._model(batched_graph, features).detach().cpu().numpy()
 
         gap_values = outputs[:, self._gap_index]
+        #print(f"output: {outputs[:,:]}")
         for local_idx, target_idx in enumerate(valid_indices):
             scores[target_idx] = float(gap_values[local_idx])
 

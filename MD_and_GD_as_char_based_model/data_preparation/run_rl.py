@@ -76,6 +76,12 @@ class ReinforcementLearning:
 		#assert False,"check befor rl"
 		print(f"Running RL with {len(self.configuration.scaffolds)} scaffolds")
 		start_time = time.time()
+		first_actor_param = next(self.actor.network.parameters(), None)
+		first_critic_param = next(self.critic.network.parameters(), None)
+		actor_device = first_actor_param.device if first_actor_param is not None else "unknown"
+		critic_device = first_critic_param.device if first_critic_param is not None else "unknown"
+		print(f"self.actor on {actor_device}")
+		print(f"self.critic on {critic_device}")
 		for step in range( self.configuration.n_steps):
 			step_start = time.time()
 			sampled_sequences = self._sampling()
