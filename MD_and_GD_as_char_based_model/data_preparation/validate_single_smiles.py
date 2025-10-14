@@ -18,13 +18,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--smiles",
         "-s",
-        default="[*:0]c1ccc2c(c1)C(CCCCCC)(CCCCCC)c1cc([*:1])ccc1-2",
+        default="[*:0]c1c2nc(c([*:1])c3ccc([nH]3)c([*:2])c3nc(c([*:3])c4ccc1[nH]4)C=C3)C=C2",
         help="SMILES string to validate.",
     )
     parser.add_argument(
         "--output",
         "-o",
-        default="./data/sample/single_smiles.png",
+        default="./data/sample/single_smiles_best.png",
         help="Path to the output image file (PNG or SVG).",
     )
     parser.add_argument(

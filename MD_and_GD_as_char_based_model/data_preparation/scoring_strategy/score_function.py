@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 from typing import Dict, List, Optional, Tuple
 
@@ -97,11 +98,31 @@ def composite_qed_sa_score(smiles_list, weights=(1.0, 1.0)):
     return combined.astype(np.float32), component_scores
 
 
+def _average_decoration_similarity(decoration: str) -> float:
+    parts = [part for part in (decoration or "").split("|") if part]
+    if len(parts) < 2:
+        return 1.0
+
+    fps = []
+    for part in parts:
+        mol = Chem.MolFromSmiles(part)
+        if mol is None:
+            continue
+        fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048))
+
+    if len(fps) < 2:
+        return 0.0 if not fps else 1.0
+
+    similarities = [DataStructs.TanimotoSimilarity(a, b) for a, b in itertools.combinations(fps, 2)]
+    return float(np.mean(similarities)) if similarities else 0.0
+
+
 def multiple_score(
     smiles_list: List[str],
-    weights: Tuple[float, ...] | List[float] = (1.0,),
+    weights: Tuple[float, ...] | List[float] = (0.5, 0.3, 0.2),
     config: Optional[Dict[str, object]] = None,
     predictor: Optional[KAGnnGapPredictor] = None,
+    decorations: Optional[List[str]] = None,
 ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
     """General scorer pipeline backed by KA-GNN ST Gap results.
 
@@ -128,9 +149,30 @@ def multiple_score(
 
     fallback = float(cfg.get("invalid_value", 0.0))
     normalized[~finite_mask] = fallback
+    print(f"normalized: {normalized}")
+
+    if decorations is None:
+        decorations = [""] * len(smiles_list)
+    elif len(decorations) != len(smiles_list):
+        raise ValueError("Length of decorations must match length of smiles_list")
+
+    charge_scores = np.full_like(normalized, fallback)
+    symmetry_scores = np.full_like(normalized, fallback)
+
+    for idx, (smi, decoration) in enumerate(zip(smiles_list, decorations)):
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        formal_charge = Chem.GetFormalCharge(mol)
+        charge_scores[idx] = 1.0 if (formal_charge > 0 and formal_charge % 2 == 0) else 0.5
+        symmetry_scores[idx] = _average_decoration_similarity(decoration)
+    print(f"charge_scores: {charge_scores}")
+    print(f"symmetry_scores: {symmetry_scores}")
 
     component_scores = {
         "st_gap": normalized.astype(np.float32),
+        "charge_score": charge_scores.astype(np.float32),
+        "symmetry_score": symmetry_scores.astype(np.float32),
         "st_gap_raw": np.where(finite_mask, raw_scores, fallback).astype(np.float32),
     }
 

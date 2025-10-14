@@ -23,6 +23,8 @@ class StandardScoringStrategy(BaseScoringStrategy):
 
         self._use_kan = bool(scoring_cfg.get("use_kan"))
         self._component_weights = self._parse_weights(scoring_cfg.get("weights"))
+        print(f"Using KA-GNN: {self._use_kan}, component weights: {self._component_weights}")
+        #assert False,"check weights and use_kan"
         self._kan_config = self._extract_kan_config(scoring_cfg)
         self._kan_predictor = (
             KAGnnGapPredictor(self._kan_config) if self._use_kan else None
@@ -52,6 +54,7 @@ class StandardScoringStrategy(BaseScoringStrategy):
                 weights=self._component_weights,
                 config=self._kan_config,
                 predictor=self._kan_predictor,
+                decorations=[sample.decoration for sample in sampled_sequences],
             )
         else:
             total_score, component_scores = composite_qed_sa_score(
@@ -70,7 +73,7 @@ class StandardScoringStrategy(BaseScoringStrategy):
 
     def _parse_weights(self, raw_weights) -> Tuple[float, ...]:
         if raw_weights is None:
-            return (1.0,) if self._use_kan else (1.0, 1.0)
+            return (0.5, 0.3, 0.2) if self._use_kan else (1.0, 1.0)
 
         if isinstance(raw_weights, (int, float)):
             weights = (float(raw_weights),)
@@ -78,10 +81,12 @@ class StandardScoringStrategy(BaseScoringStrategy):
             weights = tuple(float(w) for w in raw_weights)
 
         if not weights:
-            return (1.0,) if self._use_kan else (1.0, 1.0)
+            return (0.5, 0.3, 0.2) if self._use_kan else (1.0, 1.0)
 
         if self._use_kan:
-            return weights
+            if len(weights) < 3:
+                weights = tuple(list(weights) + [0.0] * (3 - len(weights)))
+            return weights[:3]
 
         if len(weights) < 2:
             return tuple(list(weights) + [1.0] * (2 - len(weights)))
