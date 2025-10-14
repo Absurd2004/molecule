@@ -285,6 +285,9 @@ def atom_to_graph(smiles, encoder_atom, encoder_bond, force_field: str = 'mmff')
         ff = (force_field or 'mmff').lower()
         if ff == 'mmff':
             ok = mmff_force_field(mol)
+            if not ok:
+                ok = uff_force_field(mol)
+                
 
         elif ff == 'uff':
             ok = uff_force_field(mol)
@@ -378,6 +381,7 @@ def atom_to_graph(smiles, encoder_atom, encoder_bond, force_field: str = 'mmff')
 
                 # Create a graph. undirected_graph
                 g = dgl.DGLGraph()
+                #g = dgl.graph()
                 g.add_nodes(num_atoms)
                 g.add_edges(src_list, dst_list)
                 

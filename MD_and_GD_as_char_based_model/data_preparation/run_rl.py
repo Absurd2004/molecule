@@ -9,8 +9,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import os
-import random
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
 import importlib
@@ -30,6 +28,7 @@ import models.actions as ma
 import models.model as mm
 import wandb
 import torch
+import random
 
 
 
@@ -41,16 +40,12 @@ import torch
 # ---------------------------------------------------------------------------
 
 def set_seed(seed):
-	os.environ["PYTHONHASHSEED"] = str(seed)
-	random.seed(seed)
-	np.random.seed(seed)
-	torch.manual_seed(seed)
-	if torch.cuda.is_available():
-		torch.cuda.manual_seed(seed)
-		torch.cuda.manual_seed_all(seed)
-	torch.backends.cudnn.deterministic = True
-	torch.backends.cudnn.benchmark = False
-
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
 
 
 class ReinforcementLearning:

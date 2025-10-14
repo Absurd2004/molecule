@@ -35,6 +35,7 @@ class StandardScoringStrategy(BaseScoringStrategy):
         if hasattr(self.diversity_filter, "update_score"):
             summary.total_score = self.diversity_filter.update_score(summary, sampled_sequences, step)
             #print(f"Scores after diversity filter: {summary.total_score}")
+            print(f"size of total scores after diversity filter: {len(summary.total_score)}")
             #assert False,"check after diversity filter"
         return summary
     

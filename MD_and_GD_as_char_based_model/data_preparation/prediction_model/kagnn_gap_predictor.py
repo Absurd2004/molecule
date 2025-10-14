@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib
 import sys
 from pathlib import Path
@@ -141,6 +142,7 @@ class KAGnnGapPredictor:
 
         model.to(self._device)
         model.eval()
+
         self._model = model
 
     def _make_update_node_features(self):
@@ -169,6 +171,7 @@ class KAGnnGapPredictor:
         scores = np.full(len(smiles_list), self._invalid_value, dtype=np.float32)
 
         graphs: List["dgl.DGLGraph"] = []
+        #graphs: List["dgl.graph"] = []
         valid_indices: List[int] = []
 
         for idx, smiles in enumerate(smiles_list):
@@ -188,6 +191,7 @@ class KAGnnGapPredictor:
                 valid_indices.append(idx)
             except Exception:
                 continue
+        print(f"Valid graphs count: {len(graphs)}")
 
         if not graphs:
             return scores
@@ -206,3 +210,17 @@ class KAGnnGapPredictor:
 
 
 __all__ = ["KAGnnGapPredictor"]
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Score SMILES with KA-GNN gap predictor")
+    parser.add_argument("smiles", nargs="+", help="SMILES strings to score")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    cli_args = _parse_args()
+    predictor = KAGnnGapPredictor()
+    gap_scores = predictor.score(cli_args.smiles)
+    for smi, score in zip(cli_args.smiles, gap_scores.tolist()):
+        print(f"{smi}\t{score}")

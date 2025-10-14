@@ -32,7 +32,7 @@
     },
     "diversity_filter": {
       "name": "no_filter_with_penalty",
-      "minscore": 7.7,
+      "minscore": 0.77,
       "bucket_size": 25,
       "minsimilarity": 0.4
     }
