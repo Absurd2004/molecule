@@ -117,6 +117,42 @@ def _average_decoration_similarity(decoration: str) -> float:
     return float(np.mean(similarities)) if similarities else 0.0
 
 
+def _decoration_pair_reward(decoration: str) -> float:
+    parts = [part for part in (decoration or "").split("|") if part]
+    if not parts:
+        return 0.0
+
+    mols: List[Chem.Mol] = []
+    for part in parts:
+        mol = Chem.MolFromSmiles(part)
+        if mol is None:
+            return 0.0
+        mols.append(mol)
+
+    fps = [AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048) for mol in mols]
+
+    def _is_identical(a, b, tol: float = 1e-9) -> bool:
+        return DataStructs.TanimotoSimilarity(a, b) >= 1.0 - tol
+
+    clusters: List[List[int]] = []
+    for idx, fp in enumerate(fps):
+        assigned = False
+        for cluster in clusters:
+            if _is_identical(fp, fps[cluster[0]]):
+                cluster.append(idx)
+                assigned = True
+                break
+        if not assigned:
+            clusters.append([idx])
+
+    cluster_sizes = sorted(len(cluster) for cluster in clusters)
+    if cluster_sizes == [len(parts)]:
+        return 1.0
+    if cluster_sizes == [2, 2]:
+        return 1.0
+    return 0.0
+
+
 def multiple_score(
     smiles_list: List[str],
     weights: Tuple[float, ...] | List[float] = (0.5, 0.3, 0.2),
@@ -170,7 +206,7 @@ def multiple_score(
             charge_scores[idx] = 1.0
         else:
             charge_scores[idx] = 0.5
-        symmetry_scores[idx] = _average_decoration_similarity(decoration)
+        symmetry_scores[idx] = _decoration_pair_reward(decoration)
     print(f"charge_scores: {charge_scores}")
     print(f"symmetry_scores: {symmetry_scores}")
 
