@@ -100,6 +100,25 @@ def print_two_pair_match(smiles_list: Iterable[str]) -> None:
 		print("Not matching")
 
 
+def print_smiles_ring_count(smiles: str) -> None:
+	"""Print the number of rings present in the molecule described by ``smiles``.
+
+	Args:
+		smiles: A SMILES string describing the molecule.
+
+	If the SMILES string cannot be parsed, a message indicating the error is printed
+	instead of a ring count value.
+	"""
+	mol = Chem.MolFromSmiles(smiles)
+	if mol is None:
+		print(f"Invalid SMILES: {smiles}")
+		return
+
+	# RDKit reports the size of the smallest set of smallest rings (SSSR).
+	ring_count = mol.GetRingInfo().NumRings()
+	print(f"SMILES: {smiles} -> Ring count: {ring_count}")
+
+
 if __name__ == "__main__":
 	# Example usage – replace with any SMILES string you'd like to inspect.
 	print_smiles_charge(
@@ -107,5 +126,6 @@ if __name__ == "__main__":
 	)
 	print_smiles_similarity("O1c2ccccc2N(c2c(C)c(C)c([*])c(C)c2C)c2ccccc21", "c1cccc2c1N(c1c(C)c(C)c([*])c(C)c1C)c1ccccc1O2")
 	print_two_pair_match([
-		"[*]c1cc[n+](C)cc1","[*]CCCC","[*]c1cc[n+](C)cc1","[*]c1cc[n+](C)cc1"
+		"[*]c1cc[n+](C)cc1","[*]c1cc[n+](C)cc1","[*]c1cc[n+](C)cc1","[*]c1cc[n+](C)cc1"
 	])
+	print_smiles_ring_count("[*]c1cc[n+](C)c2ccccc21")

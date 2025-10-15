@@ -153,6 +153,17 @@ def _decoration_pair_reward(decoration: str) -> float:
     return 0.0
 
 
+def _decoration_exceeds_ring_threshold(decoration: str, threshold: int = 3) -> bool:
+    parts = [part for part in (decoration or "").split("|") if part]
+    for part in parts:
+        mol = Chem.MolFromSmiles(part)
+        if mol is None:
+            continue
+        if mol.GetRingInfo().NumRings() > threshold:
+            return True
+    return False
+
+
 def multiple_score(
     smiles_list: List[str],
     weights: Tuple[float, ...] | List[float] = (0.5, 0.3, 0.2),
@@ -194,6 +205,7 @@ def multiple_score(
 
     charge_scores = np.full_like(normalized, fallback)
     symmetry_scores = np.full_like(normalized, fallback)
+    ring_penalty_mask = np.zeros_like(normalized, dtype=bool)
 
     for idx, (smi, decoration) in enumerate(zip(smiles_list, decorations)):
         mol = Chem.MolFromSmiles(smi)
@@ -207,6 +219,8 @@ def multiple_score(
         else:
             charge_scores[idx] = 0.5
         symmetry_scores[idx] = _decoration_pair_reward(decoration)
+        if _decoration_exceeds_ring_threshold(decoration):
+            ring_penalty_mask[idx] = True
     print(f"charge_scores: {charge_scores}")
     print(f"symmetry_scores: {symmetry_scores}")
 
@@ -231,7 +245,17 @@ def multiple_score(
         total_weight += weight
 
     if total_weight == 0.0:
-        return component_scores["st_gap"], component_scores
+        combined = component_scores["st_gap"].copy()
+    else:
+        combined = weighted_sum / total_weight
 
-    combined = weighted_sum / total_weight
+    if np.any(ring_penalty_mask):
+        combined = combined.astype(np.float32)
+        combined[ring_penalty_mask] = 0.0
+    component_scores["decoration_ring_penalty"] = np.where(
+        ring_penalty_mask,
+        0.0,
+        1.0,
+    ).astype(np.float32)
+
     return combined.astype(np.float32), component_scores
