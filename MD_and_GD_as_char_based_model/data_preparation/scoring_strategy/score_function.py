@@ -148,10 +148,18 @@ def _decoration_pair_reward(decoration: str) -> float:
     cluster_sizes = sorted(len(cluster) for cluster in clusters)
     if cluster_sizes == [len(parts)]:
         return 1.0
+    if len(parts) == 4:
+        pair_0_2 = _is_identical(fps[0], fps[2])
+        pair_1_3 = _is_identical(fps[1], fps[3])
+        if pair_0_2 and pair_1_3:
+            return 1.0
+        if cluster_sizes == [2, 2]:
+            return 0.5
+        if cluster_sizes == [1, 1, 2]:
+            return 0.5
+        return 0.0
     if cluster_sizes == [2, 2]:
         return 1.0
-    if len(parts) == 4 and cluster_sizes == [1, 1, 2]:
-        return 0.5
     return 0.0
 
 

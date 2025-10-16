@@ -32,6 +32,7 @@ class SampleModel(BaseAction):
         clean_scaffolds = [remove_attachment_point_numbers(scaffold) for scaffold in scaffold_list]
         #print(f"Sampling {len(clean_scaffolds)} scaffolds")
         #print(f"all scaffolds: {clean_scaffolds}")
+        #assert False,"check scaffolds"
         dataset = md.Dataset(clean_scaffolds, self.model.vocabulary.scaffold_vocabulary,
                              self.model.vocabulary.scaffold_tokenizer)
         dataloader = tud.DataLoader(dataset, batch_size=len(dataset), shuffle=False, collate_fn=md.Dataset.collate_fn)

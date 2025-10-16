@@ -2,7 +2,7 @@
   "actor": "./pretrained_models/rl/best.pt",
   "critic": "./pretrained_models/rl/best.pt",
   "scaffolds": [
-    "[*]c1c(C)cc(C)c(-c2cc(-c3c(C)cc(C)c([*])c3C)cc([SH](=O)=O)c2)c1C"
+    "[*:0]c1c2nc(c([*:1])c3ccc([nH]3)c([*:2])c3nc(c([*:3])c4ccc1[nH]4)C=C3)C=C2"
   ],
   "n_steps": 1000,
   "learning_rate": 0.0001,
@@ -24,9 +24,9 @@
     "scoring_function": {
       "use_kan": true,
       "weights": [
-        0.5,
+        0.1,
         0.3,
-        0.2
+        0.6
 
       ],
       "scale": 1.0,
