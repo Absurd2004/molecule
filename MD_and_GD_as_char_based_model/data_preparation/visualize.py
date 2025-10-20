@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Sequence, Tuple
 
 from rdkit import Chem
-from rdkit.Chem import Draw
+from rdkit.Chem.Draw import rdMolDraw2D
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
 		"--limit",
 		type=int,
 		default=0,
-		help="Maximum number of molecules to render (0 for all, default: 64).",
+		help="Maximum number of molecules to render (0 for all, default: 0).",
 	)
 	parser.add_argument(
 		"--size",
@@ -76,9 +76,15 @@ def render_individual_images(
 	images_dir = csv_path.parent / "images"
 	images_dir.mkdir(parents=True, exist_ok=True)
 	for line_no, mol, legend in molecules:
-		image = Draw.MolToImage(mol, size=(size, size), legend=legend)
-		file_path = images_dir / f"{line_no}.png"
-		image.save(file_path)
+		drawer = rdMolDraw2D.MolDraw2DSVG(size, size)
+		opts = drawer.drawOptions()
+		opts.legendFontSize = int(opts.legendFontSize * 1.6)
+		prepared = rdMolDraw2D.PrepareMolForDrawing(mol)
+		drawer.DrawMolecule(prepared, legend=legend)
+		drawer.FinishDrawing()
+		svg = drawer.GetDrawingText().replace("svg:", "")
+		file_path = images_dir / f"{line_no}.svg"
+		file_path.write_text(svg, encoding="utf-8")
 	return images_dir
 
 
