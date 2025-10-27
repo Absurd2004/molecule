@@ -17,7 +17,7 @@ from scipy.stats import gaussian_kde
 
 
 
-DEFAULT_TSV_PATH = Path("./data/valid/sliced_smiles_recap.tsv")
+DEFAULT_CSV_PATH = Path("./data/valid/sliced_smiles_recap.csv")
 DEFAULT_OUTPUT_PATH = Path("./data/valid/sliced_smiles_recap.png")
 DEFAULT_COLOR_RGB: Tuple[float, float, float] = (
 	31 / 255,
@@ -58,23 +58,23 @@ def column_arg(value: str) -> Union[int, str]:
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
 		description=(
-			"Compute the ring-count distribution of decorations extracted from a TSV "
+			"Compute the ring-count distribution of decorations extracted from a CSV "
 			"file and plot the smoothed percentage curve with a filled area underneath."
 		)
 	)
 	parser.add_argument(
-		"tsv_path",
+		"csv_path",
 		type=Path,
 		nargs="?",
-		default=DEFAULT_TSV_PATH,
-		help="Path to the TSV file containing decoration entries.",
+		default=DEFAULT_CSV_PATH,
+		help="Path to the CSV file containing decoration entries.",
 	)
 	parser.add_argument(
 		"--decor-column",
 		type=column_arg,
-		default=1,
+		default="decoration",
 		help=(
-			"Column name or zero-based index that holds decoration strings (default: 1)."
+			"Column name or zero-based index that holds decoration strings (default: 'decoration')."
 		),
 	)
 	parser.add_argument(
@@ -168,14 +168,14 @@ def lighten_color(color: str, amount: float = 0.5) -> Tuple[float, float, float]
 
 
 def load_decorations(
-	tsv_path: Path,
+	csv_path: Path,
 	decor_column: Union[int, str],
 	separator: str,
 ) -> Sequence[str]:
-	if not tsv_path.exists():
-		raise FileNotFoundError(f"TSV file not found: {tsv_path}")
+	if not csv_path.exists():
+		raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
-	df = pd.read_csv(tsv_path, sep="\t", dtype=str)
+	df = pd.read_csv(csv_path, dtype=str)
 
 	if isinstance(decor_column, int):
 		if decor_column < 0 or decor_column >= df.shape[1]:
@@ -187,7 +187,7 @@ def load_decorations(
 		if decor_column not in df.columns:
 			available = ", ".join(df.columns.astype(str))
 			raise KeyError(
-				f"Column '{decor_column}' not found in TSV. Available columns: {available}"
+				f"Column '{decor_column}' not found in CSV. Available columns: {available}"
 			)
 		series = df[decor_column]
 
@@ -379,8 +379,8 @@ def plot_ring_distribution(
 def main() -> None:
 	args = parse_args()
 
-	tsv_path = args.tsv_path
-	decorations = load_decorations(tsv_path, args.decor_column, args.decor_sep)
+	csv_path = args.csv_path
+	decorations = load_decorations(csv_path, args.decor_column, args.decor_sep)
 	ring_counts, failed_decorations = compute_ring_counts(decorations)
 
 	if failed_decorations:
@@ -390,12 +390,12 @@ def main() -> None:
 		)
 
 	if args.output == DEFAULT_OUTPUT_PATH:
-		if tsv_path != DEFAULT_TSV_PATH:
-			output_path = tsv_path.with_name("decoration_ring_distribution.png")
+		if csv_path != DEFAULT_CSV_PATH:
+			output_path = csv_path.with_name("decoration_ring_distribution.png")
 		else:
 			output_path = DEFAULT_OUTPUT_PATH
 	elif args.output is None:
-		output_path = tsv_path.with_name("decoration_ring_distribution.png")
+		output_path = csv_path.with_name("decoration_ring_distribution.png")
 	elif args.output.is_dir():
 		output_path = args.output / "decoration_ring_distribution.png"
 	else:
