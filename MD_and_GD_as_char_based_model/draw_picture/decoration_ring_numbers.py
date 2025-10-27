@@ -79,8 +79,8 @@ def parse_args() -> argparse.Namespace:
 	)
 	parser.add_argument(
 		"--decor-sep",
-		default=";",
-		help="Separator used between decorations inside the column (default: ';').",
+		default="|",
+		help="Separator used between decorations inside the column (default: '|').",
 	)
 	parser.add_argument(
 		"--output",
@@ -193,8 +193,10 @@ def load_decorations(
 
 	decorations: List[str] = []
 	for cell in series.dropna():
-		parts = [part.strip() for part in str(cell).split(separator) if part.strip()]
-		decorations.extend(parts)
+		parts = [part.strip() for part in str(cell).split(separator)]
+		for part in parts[1:]:
+			if part:
+				decorations.append(part)
 
 	return decorations
 
