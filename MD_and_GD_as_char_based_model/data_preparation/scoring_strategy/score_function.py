@@ -134,6 +134,12 @@ def _decoration_pair_reward(decoration: str) -> float:
     def _is_identical(a, b, tol: float = 1e-9) -> bool:
         return DataStructs.TanimotoSimilarity(a, b) >= 1.0 - tol
 
+    if len(parts) == 3:
+        all_same = _is_identical(fps[0], fps[1]) and _is_identical(fps[1], fps[2])
+        if all_same or _is_identical(fps[1], fps[2]):
+            return 1.0
+        return 0.0
+
     clusters: List[List[int]] = []
     for idx, fp in enumerate(fps):
         assigned = False

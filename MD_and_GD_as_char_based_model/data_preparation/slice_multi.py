@@ -55,7 +55,7 @@ def _process_line(item):
     is_valid = True
     original_smiles = uc.to_smiles(mol)
 
-    for cuts in range(2, WORKER_MAX_CUTS + 1):
+    for cuts in range(1, WORKER_MAX_CUTS + 1):
         for sliced_mol in WORKER_ENUMERATOR.enumerate(mol, cuts=cuts):
             scaffold_smi, decoration_map = sliced_mol.to_smiles()
             decorations = tuple(
@@ -216,13 +216,13 @@ def parse_args():
     """Parses input arguments."""
     parser = argparse.ArgumentParser(description="Slices the molecules a given way using multi-processing.")
     parser.add_argument("--input-smiles-path", "-i",
-                        help="Path to the input file with molecules in SMILES notation.", type=str, default="./data/train/our_smiles.smi")
+                        help="Path to the input file with molecules in SMILES notation.", type=str, default="./data/our_test/test.smi")
     parser.add_argument("--output-parquet-folder", "-o",
-                        help="Path to the output Apache Parquet folder.", type=str, default="./data/train/our_smiles_recap")
+                        help="Path to the output Apache Parquet folder.", type=str, default="./data/our_test/our_smiles_recap_cuts_8")
     parser.add_argument("--output-smiles-path", "-u",
-                        help="Path to the output SMILES file.", type=str, default="./data/train/our_smiles_recap.tsv")
+                        help="Path to the output SMILES file.", type=str, default="./data/our_test/our_smiles_recap_cuts_8.tsv")
     parser.add_argument("--max-cuts", "-c",
-                        help="Maximum number of cuts to attempts for each molecule [DEFAULT: 4]", type=int, default=4)
+                        help="Maximum number of cuts to attempts for each molecule [DEFAULT: 4]", type=int, default=8)
     parser.add_argument("--slice-type", "-s",
                         help="Kind of slicing performed TYPES=(recap, hr) [DEFAULT: hr]", type=str, default="recap")
     parser.add_argument("--conditions-file", "-f",

@@ -98,7 +98,9 @@ SLICE_SMARTS = {
         "n!@-C",  # aromatic N - aliphatic C
         "[$([NR][CR]=O)]!@-C",  # lactam nitrogen - aliphatic carbon
         "c!@-c",  # aromatic C - aromatic C
-        "N!@-[$(S(=O)=O)]"  # sulphonamides
+        "N!@-[$(S(=O)=O)]",  # sulphonamides
+
+   
     ]
 }
 SLICE_SMARTS = {name: [rkc.MolFromSmarts(sma) for sma in smarts] for name, smarts in SLICE_SMARTS.items()}
