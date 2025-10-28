@@ -91,7 +91,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--max-samples",
 		type=int,
-		help="Optional maximum number of molecules; larger datasets are randomly downsampled",
+		help="Optional maximum number of molecules per dataset; larger CSVs are randomly downsampled",
 	)
 	return parser.parse_args()
 
@@ -262,9 +262,17 @@ def main() -> None:
 	feature_blocks: list[np.ndarray] = []
 	source_flags: list[int] = []
 	active_configs: list[DatasetConfig] = []
-	for cfg in configs:
+	for cfg_index, cfg in enumerate(configs):
 		smiles_series = load_smiles_column(cfg.path)
-		features, valid_smiles = smiles_to_fingerprints(smiles_series, args.radius, args.n_bits)
+		if args.max_samples is not None and smiles_series.size > args.max_samples:
+			indices = subsample_indices(smiles_series.size, args.max_samples, args.seed + cfg_index)
+			smiles_series = smiles_series.iloc[indices].reset_index(drop=True)
+			print(
+				f"[info] Subsampled {smiles_series.size} molecules from '{cfg.path}' "
+				f"(requested max {args.max_samples})",
+			)
+		smiles_list = smiles_series.tolist()
+		features, valid_smiles = smiles_to_fingerprints(smiles_list, args.radius, args.n_bits)
 		dropped = smiles_series.size - len(valid_smiles)
 		if dropped:
 			print(f"[warning] Dropped {dropped} invalid SMILES in '{cfg.path}'")
@@ -280,10 +288,6 @@ def main() -> None:
 
 	all_features = np.concatenate(feature_blocks, axis=0)
 	source_flags_array = np.asarray(source_flags, dtype=int)
-
-	kept_indices = subsample_indices(all_features.shape[0], args.max_samples, args.seed)
-	all_features = all_features[kept_indices]
-	source_flags_array = source_flags_array[kept_indices]
 
 	reduced = apply_pca(all_features, args.pca_dim, args.seed)
 	distance_matrix = generalized_tanimoto_distance(reduced)
