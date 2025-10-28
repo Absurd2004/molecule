@@ -26,3 +26,4 @@ fragment_molecule_videos/
 images/
 pretrained_models/
 logs/
+dft/
