@@ -26,6 +26,7 @@ from matplotlib.colors import to_rgb
 DEFAULT_DATASET_PATHS: list[Path | str] = ["./data_preparation/prediction_model/dft/Photosensitizers_DA.csv","./data_preparation/prediction_model/dft/Photosensitizers_DAD.csv"]
 DEFAULT_DATASET_LABELS: list[str] = ["DA","DAD"]
 DEFAULT_DATASET_COLORS: list[tuple[float, float, float]] = []
+DEFAULT_DATASET_MAX_SAMPLES: list[int | None] = []
 
 # Additional colors will be drawn cyclically from this palette if fewer colors
 # are provided than datasets.
@@ -48,6 +49,7 @@ class DatasetConfig:
 	label: str
 	path: Path
 	color: tuple[float, float, float]
+	max_samples: int | None
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,8 +92,14 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--point-size", type=float, default=18.0, help="Marker size for scatter plot points")
 	parser.add_argument(
 		"--max-samples",
+		dest="max_samples",
 		type=int,
-		help="Optional maximum number of molecules per dataset; larger CSVs are randomly downsampled",
+		action="append",
+		help=(
+			"Optional maximum number of molecules per dataset. Provide a single value to apply "
+			"to every dataset or repeat the flag so counts align with --csv order."
+		),
+		default=None,
 	)
 	return parser.parse_args()
 
@@ -100,6 +108,7 @@ def resolve_dataset_configs(args: argparse.Namespace) -> list[DatasetConfig]:
 	csv_inputs = args.csvs if args.csvs else DEFAULT_DATASET_PATHS
 	label_inputs = args.labels if args.labels else DEFAULT_DATASET_LABELS
 	color_inputs = args.colors if args.colors else DEFAULT_DATASET_COLORS
+	max_samples_inputs = args.max_samples if args.max_samples is not None else DEFAULT_DATASET_MAX_SAMPLES
 
 	if not csv_inputs:
 		raise ValueError(
@@ -111,6 +120,21 @@ def resolve_dataset_configs(args: argparse.Namespace) -> list[DatasetConfig]:
 
 	if color_inputs and len(color_inputs) != len(csv_inputs):
 		raise ValueError("Number of colors must match number of CSV files")
+
+	if max_samples_inputs and len(max_samples_inputs) not in (1, len(csv_inputs)):
+		raise ValueError("Number of --max-samples values must be 1 or match number of CSV files")
+
+	max_samples_list: list[int | None]
+	if not max_samples_inputs:
+		max_samples_list = [None] * len(csv_inputs)
+	elif len(max_samples_inputs) == 1:
+		max_samples_list = [max_samples_inputs[0]] * len(csv_inputs)
+	else:
+		max_samples_list = list(max_samples_inputs)
+
+	for value in max_samples_list:
+		if value is not None and value <= 0:
+			raise ValueError("--max-samples values must be positive integers")
 
 	labels = (
 		list(label_inputs)
@@ -131,12 +155,13 @@ def resolve_dataset_configs(args: argparse.Namespace) -> list[DatasetConfig]:
 		base_colors = base_colors[: len(csv_inputs)]
 
 	configs: list[DatasetConfig] = []
-	for label, csv_path, color in zip(labels, csv_inputs, base_colors):
+	for label, csv_path, color, max_count in zip(labels, csv_inputs, base_colors, max_samples_list):
 		configs.append(
 			DatasetConfig(
 				label=label,
 				path=Path(csv_path),
 				color=to_rgb(color),
+				max_samples=max_count,
 			),
 		)
 
@@ -264,12 +289,13 @@ def main() -> None:
 	active_configs: list[DatasetConfig] = []
 	for cfg_index, cfg in enumerate(configs):
 		smiles_series = load_smiles_column(cfg.path)
-		if args.max_samples is not None and smiles_series.size > args.max_samples:
-			indices = subsample_indices(smiles_series.size, args.max_samples, args.seed + cfg_index)
+		sample_limit = cfg.max_samples
+		if sample_limit is not None and smiles_series.size > sample_limit:
+			indices = subsample_indices(smiles_series.size, sample_limit, args.seed + cfg_index)
 			smiles_series = smiles_series.iloc[indices].reset_index(drop=True)
 			print(
 				f"[info] Subsampled {smiles_series.size} molecules from '{cfg.path}' "
-				f"(requested max {args.max_samples})",
+				f"(requested max {sample_limit})",
 			)
 		smiles_list = smiles_series.tolist()
 		features, valid_smiles = smiles_to_fingerprints(smiles_list, args.radius, args.n_bits)
