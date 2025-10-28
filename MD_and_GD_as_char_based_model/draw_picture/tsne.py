@@ -84,8 +84,8 @@ def parse_args() -> argparse.Namespace:
 	)
 	parser.add_argument("--radius", type=int, default=2, help="Radius for the Morgan fingerprint")
 	parser.add_argument("--n-bits", type=int, default=2048, help="Number of bits for the Morgan fingerprint")
-	parser.add_argument("--pca-dim", type=int, default=100, help="Target dimensionality after PCA reduction")
-	parser.add_argument("--perplexity", type=float, default=30.0, help="Perplexity parameter for t-SNE")
+	parser.add_argument("--pca-dim", type=int, default=50, help="Target dimensionality after PCA reduction")
+	parser.add_argument("--perplexity", type=float, default=50.0, help="Perplexity parameter for t-SNE")
 	parser.add_argument("--seed", type=int, default=13, help="Random seed for PCA, t-SNE, and sampling")
 	parser.add_argument("--point-size", type=float, default=18.0, help="Marker size for scatter plot points")
 	parser.add_argument(
