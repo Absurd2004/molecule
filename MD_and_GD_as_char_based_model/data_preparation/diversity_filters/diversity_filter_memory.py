@@ -27,8 +27,19 @@ class DiversityFilterMemory:
     ) -> None:
         component_scores = {name: float(values[indx]) for name, values in components.items()}
         component_scores[TOTAL_SCORE_COLUMN] = float(score)
-        if not self.smiles_exists(smile):
-            self._add_to_memory(step, smile, scaffold, component_scores)
+
+        exists_in_memory = self.smiles_exists(smile)
+
+        # 保留原有的只记录新 SMILES 的逻辑，方便日后恢复
+        # if not self.smiles_exists(smile):
+        #     self._add_to_memory(step, smile, scaffold, component_scores)
+
+        if exists_in_memory:
+            component_scores["novelty"] = 0.0
+        else:
+            component_scores.setdefault("novelty", 1.0)
+
+        self._add_to_memory(step, smile, scaffold, component_scores)
 
     def _add_to_memory(self, step: int, smile: str, scaffold: str, component_scores: Dict[str, float]):
         record = {

@@ -162,7 +162,7 @@ def _decoration_pair_reward(decoration: str) -> float:
         if cluster_sizes == [2, 2]:
             return 0.5
         if cluster_sizes == [1, 1, 2]:
-            return 0.5
+            return 0.25
         return 0.0
     if cluster_sizes == [2, 2]:
         return 1.0

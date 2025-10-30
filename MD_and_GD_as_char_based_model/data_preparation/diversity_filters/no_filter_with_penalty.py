@@ -23,10 +23,20 @@ class NoFilterWithPenalty(BaseDiversityFilter):
         scores = score_summary.total_score
         smiles = score_summary.scored_smiles
 
+        # 初始化 novelty 组件分数（1=新分子，0=已存在）
+        novelty_scores = np.ones(len(smiles), dtype=np.float32)
+
         for i in score_summary.valid_idxs:
             smiles[i] = convert_to_rdkit_smiles(smiles[i])
-            scores[i] = 0.5*scores[i] if self._smiles_exists(smiles[i]) else scores[i]
+            exists_in_memory = self._smiles_exists(smiles[i])
+            if exists_in_memory:
+                scores[i] = 0.5 * scores[i]
+                novelty_scores[i] = 0.0
+            else:
+                novelty_scores[i] = 1.0
 
+        # 将 novelty 分数添加到 component_scores
+        score_summary.component_scores["novelty"] = novelty_scores
 
         for i in score_summary.valid_idxs:
             if scores[i] >= self.parameters.minscore:
