@@ -26,6 +26,7 @@ from configurations.configurations import ScoringStrategyConfiguration as Scorin
 from scoring_strategy.scoring_strategy import StandardScoringStrategy
 from scoring_strategy.summary import ScoreSummary
 import models.model as mm
+from run_rl import ReinforcementLearning, load_models
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +237,7 @@ class RandomSampling:
         valid_ratio = (valid_count / total_sequences) if total_sequences else 0.0
 
         total_scores = score_summary.total_score
-        if total_sequences and total_scores:
+        if total_sequences and len(total_scores):
             score_array = np.asarray(total_scores, dtype=np.float32)
             score_mean = float(np.mean(score_array))
             score_std = float(np.std(score_array))
@@ -279,6 +280,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=42,
         help="Random seed for reproducibility.",
+    )
+    parser.add_argument(
+        "--rl-steps-before-sampling",
+        type=int,
+        default=0,
+        help="Number of RL fine-tuning steps to run before switching to pure random sampling.",
     )
     return parser.parse_args()
 
@@ -359,9 +366,33 @@ def main() -> None:
     configuration.output_dir = str(timestamped_dir)
     print(f"Random sampling results will be saved to {configuration.output_dir}")
 
-    # 加载预训练模型（只需要 actor）
-    model = load_model_from_checkpoint(configuration.actor, mode="eval")
-    print(f"Loaded pretrained model from {configuration.actor}")
+    rl_steps_before_sampling = max(int(args.rl_steps_before_sampling), 0)
+
+    # 根据需要运行少量强化学习步骤以提升采样模型
+    if rl_steps_before_sampling > 0:
+        print(f"Running {rl_steps_before_sampling} RL warmup steps before random sampling")
+
+        original_steps = configuration.n_steps
+        original_output_dir = configuration.output_dir
+
+        warmup_dir = Path(configuration.output_dir) / "rl_warmup"
+        warmup_dir.mkdir(parents=True, exist_ok=True)
+        configuration.n_steps = rl_steps_before_sampling
+        configuration.output_dir = str(warmup_dir)
+
+        actor, critic = load_models(configuration)
+        rl_runner = ReinforcementLearning(actor=actor, critic=critic, configuration=configuration, logger=None)
+        rl_runner.run()
+
+        configuration.n_steps = original_steps
+        configuration.output_dir = original_output_dir
+
+        model = actor.set_mode("eval")
+        print("Warmup RL finished; using fine-tuned actor for sampling")
+    else:
+        model = load_model_from_checkpoint(configuration.actor, mode="eval")
+        model.set_mode("eval")
+        print(f"Loaded pretrained model from {configuration.actor}")
 
     # 运行随机采样
     sampler = RandomSampling(model=model, configuration=configuration, logger=None)
