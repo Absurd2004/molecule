@@ -17,6 +17,7 @@ import numpy as np
 import time
 import random
 import torch
+import wandb
 
 from models.rl_actions import SampleModel
 from dto import SampledSequencesDTO
@@ -380,9 +381,14 @@ def main() -> None:
         configuration.n_steps = rl_steps_before_sampling
         configuration.output_dir = str(warmup_dir)
 
-        actor, critic = load_models(configuration)
-        rl_runner = ReinforcementLearning(actor=actor, critic=critic, configuration=configuration, logger=None)
-        rl_runner.run()
+        warmup_run = wandb.init(mode="disabled", project="random-sampling-warmup", reinit=True)
+        try:
+            actor, critic = load_models(configuration)
+            rl_runner = ReinforcementLearning(actor=actor, critic=critic, configuration=configuration, logger=None)
+            rl_runner.run()
+        finally:
+            if warmup_run is not None:
+                wandb.finish()
 
         configuration.n_steps = original_steps
         configuration.output_dir = original_output_dir
