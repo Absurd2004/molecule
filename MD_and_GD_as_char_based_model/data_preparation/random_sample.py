@@ -28,7 +28,7 @@ from configurations.configurations import ScoringStrategyConfiguration as Scorin
 from scoring_strategy.scoring_strategy import StandardScoringStrategy
 from scoring_strategy.summary import ScoreSummary
 import models.model as mm
-from run_rl import ReinforcementLearning, load_models
+from run_rl import ReinforcementLearning, load_models, init_wandb_run
 
 
 # ---------------------------------------------------------------------------
@@ -83,11 +83,14 @@ class RandomSampling:
         for step in range(self.configuration.n_steps):
             step_start = time.time()
             
+            memory_before = self._memory_snapshot()
             # 采样分子
             sampled_sequences = self._sampling()
             
             # 评分
             score_summary = self._scoring(sampled_sequences, step)
+
+            memory_after = self._memory_snapshot()
             
             # 保存当前 batch 的结果
             self._record_batch(sampled_sequences, score_summary, step)
@@ -95,6 +98,16 @@ class RandomSampling:
             
             step_end = time.time()
             
+            self._log_step(
+                step=step,
+                sampled_sequences=sampled_sequences,
+                score_summary=score_summary,
+                memory_before=memory_before,
+                memory_after=memory_after,
+                step_duration=step_end - step_start,
+                total_elapsed=step_end - start_time,
+            )
+
             # 打印进度信息
             self._print_step_info(
                 step=step,
@@ -223,6 +236,106 @@ class RandomSampling:
                 writer.writerow(record)
 
         print(f"Exported diversity memory to {output_file}")
+
+    def _memory_snapshot(self) -> Dict[str, int]:
+        diversity_filter = getattr(self.scoring_strategy, "diversity_filter", None)
+        if diversity_filter is None:
+            return {"smiles": 0, "scaffolds": 0}
+
+        number_of_smiles = getattr(diversity_filter, "number_of_smiles_in_memory", None)
+        number_of_scaffolds = getattr(diversity_filter, "number_of_scaffold_in_memory", None)
+        return {
+            "smiles": number_of_smiles() if callable(number_of_smiles) else 0,
+            "scaffolds": number_of_scaffolds() if callable(number_of_scaffolds) else 0,
+        }
+
+    def _log_step(
+        self,
+        *,
+        step: int,
+        sampled_sequences: List[SampledSequencesDTO],
+        score_summary: ScoreSummary,
+        memory_before: Dict[str, int],
+        memory_after: Dict[str, int],
+        step_duration: float,
+        total_elapsed: float,
+    ) -> None:
+        total_sequences = len(sampled_sequences)
+        valid_count = len(score_summary.valid_idxs)
+        invalid_count = total_sequences - valid_count
+        valid_ratio = (valid_count / total_sequences) if total_sequences else 0.0
+
+        metrics: Dict[str, Any] = {
+            "time/step_duration_sec": step_duration,
+            "time/elapsed_sec": total_elapsed,
+            "batch/size": total_sequences,
+            "batch/valid_count": valid_count,
+            "batch/valid_ratio": valid_ratio,
+            "batch/invalid_count": invalid_count,
+            "global/step": step + 1,
+            "memory/new_smiles": max(memory_after["smiles"] - memory_before["smiles"], 0),
+            "memory/new_scaffolds": max(memory_after["scaffolds"] - memory_before["scaffolds"], 0),
+            "memory/total_smiles": memory_after["smiles"],
+            "memory/total_scaffolds": memory_after["scaffolds"],
+        }
+
+        total_scores = score_summary.total_score
+        if total_sequences and len(total_scores):
+            score_array = np.asarray(total_scores, dtype=np.float32)
+            metrics.update(
+                {
+                    "score/total_mean": float(np.mean(score_array)),
+                    "score/total_std": float(np.std(score_array)),
+                    "score/total_sum": float(np.sum(score_array)),
+                    "score/total_min": float(np.min(score_array)),
+                    "score/total_max": float(np.max(score_array)),
+                }
+            )
+            metrics["score/total_hist"] = wandb.Histogram(score_array)
+
+            valid_scores = score_array[score_summary.valid_idxs]
+            if valid_scores.size:
+                metrics.update(
+                    {
+                        "score/valid_mean": float(np.mean(valid_scores)),
+                        "score/valid_std": float(np.std(valid_scores)),
+                        "score/valid_min": float(np.min(valid_scores)),
+                        "score/valid_max": float(np.max(valid_scores)),
+                    }
+                )
+
+        for component_name, component_values in score_summary.component_scores.items():
+            component_array = np.asarray(component_values, dtype=np.float32)
+            if component_array.size == 0:
+                continue
+            metrics[f"score/{component_name}_mean"] = float(np.mean(component_array))
+            metrics[f"score/{component_name}_std"] = float(np.std(component_array))
+            metrics[f"score/{component_name}_min"] = float(np.min(component_array))
+            metrics[f"score/{component_name}_max"] = float(np.max(component_array))
+            metrics[f"score/{component_name}_hist"] = wandb.Histogram(component_array)
+
+        smiles_list = [f"{seq.scaffold}|{seq.decoration}" for seq in sampled_sequences]
+        unique_smiles = len(set(smiles_list))
+        unique_ratio = (unique_smiles / total_sequences) if total_sequences else 0.0
+        metrics.update(
+            {
+                "batch/unique_smiles": unique_smiles,
+                "batch/unique_ratio": unique_ratio,
+            }
+        )
+
+        sampled_nlls = np.asarray([seq.nll for seq in sampled_sequences], dtype=np.float32)
+        if sampled_nlls.size:
+            metrics.update(
+                {
+                    "sampling/nll_mean": float(np.mean(sampled_nlls)),
+                    "sampling/nll_std": float(np.std(sampled_nlls)),
+                    "sampling/nll_min": float(np.min(sampled_nlls)),
+                    "sampling/nll_max": float(np.max(sampled_nlls)),
+                }
+            )
+
+        wandb.log(metrics, step=step + 1)
 
     def _print_step_info(
         self,
@@ -412,8 +525,14 @@ def main() -> None:
         print(f"Loaded pretrained model from {configuration.actor}")
 
     # 运行随机采样
-    sampler = RandomSampling(model=model, configuration=configuration, logger=None)
-    sampler.run()
+    wandb_run = None
+    try:
+        wandb_run = init_wandb_run(configuration)
+        sampler = RandomSampling(model=model, configuration=configuration, logger=None)
+        sampler.run()
+    finally:
+        if wandb_run is not None:
+            wandb.finish()
 
 
 if __name__ == "__main__":
