@@ -18,6 +18,7 @@ import time
 import random
 import torch
 import wandb
+import shutil
 
 from models.rl_actions import SampleModel
 from dto import SampledSequencesDTO
@@ -381,6 +382,8 @@ def main() -> None:
         configuration.n_steps = rl_steps_before_sampling
         configuration.output_dir = str(warmup_dir)
 
+        actor: Optional[Any] = None
+        critic: Optional[Any] = None
         warmup_run = wandb.init(mode="disabled", project="random-sampling-warmup", reinit=True)
         try:
             actor, critic = load_models(configuration)
@@ -393,8 +396,16 @@ def main() -> None:
         configuration.n_steps = original_steps
         configuration.output_dir = original_output_dir
 
-        model = actor.set_mode("eval")
-        print("Warmup RL finished; using fine-tuned actor for sampling")
+        if warmup_dir.exists():
+            shutil.rmtree(warmup_dir, ignore_errors=True)
+
+        if actor is None:
+            model = load_model_from_checkpoint(configuration.actor, mode="eval")
+            model.set_mode("eval")
+            print("Warmup RL skipped due to initialization issue; loaded pretrained model instead")
+        else:
+            model = actor.set_mode("eval")
+            print("Warmup RL finished; using fine-tuned actor for sampling")
     else:
         model = load_model_from_checkpoint(configuration.actor, mode="eval")
         model.set_mode("eval")

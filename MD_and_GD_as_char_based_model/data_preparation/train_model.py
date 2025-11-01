@@ -45,7 +45,8 @@ except ImportError as exc:  # pragma: no cover - dependency guard
 
 class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
     def __init__(self, output_prefix_path, epochs, validation_sets, lr_scheduler, collect_stats_params,
-                 lr_params, collect_stats_frequency, save_frequency, logger=None, global_step_fn=None):
+                 lr_params, collect_stats_frequency, save_frequency, logger=None, global_step_fn=None,
+                 initial_best_loss=None, initial_epochs_without_improvement=0):
         ma.TrainModelPostEpochHook.__init__(self, logger)
 
         self.validation_sets = validation_sets
@@ -63,9 +64,9 @@ class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
         log_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir = log_dir
         self._global_step_fn = global_step_fn
-        self.best_validation_loss = None
+        self.best_validation_loss = initial_best_loss
         self.best_validation_epoch = None
-        self._epochs_without_improvement = 0
+        self._epochs_without_improvement = initial_epochs_without_improvement
         self._patience = 6
         self._best_model_path = Path(self.output_prefix_path).with_name("best.pt")
 
@@ -103,6 +104,7 @@ class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
         if lr_reached_min or self.epochs == epoch \
                 or (self.save_frequency > 0 and (epoch % self.save_frequency == 0)):
             model.save(self._model_path(epoch))
+            self._save_training_state(epoch)
 
         return not lr_reached_min and not patience_triggered
 
@@ -111,6 +113,23 @@ class TrainModelPostEpochHook(ma.TrainModelPostEpochHook):
 
     def _model_path(self, epoch):
         return "{}.{}.pt".format(self.output_prefix_path, epoch)
+    
+    def _training_state_path(self, epoch):
+        return "{}.{}.state.pt".format(self.output_prefix_path, epoch)
+    
+    def _save_training_state(self, epoch):
+        """Save training state for resuming."""
+        state = {
+            'epoch': epoch,
+            'best_validation_loss': self.best_validation_loss,
+            'best_validation_epoch': self.best_validation_epoch,
+            'epochs_without_improvement': self._epochs_without_improvement,
+            'lr': self.get_lr(),
+        }
+        state_path = self._training_state_path(epoch)
+        torch.save(state, state_path)
+        if self.logger:
+            self.logger.info("Saved training state to %s", state_path)
 
     # writer management removed; logging handled via Weights & Biases
 
@@ -157,6 +176,8 @@ def main():
     cs_params = params["collect_stats"]
     params = params["other"]
 
+    resume_epoch = params.pop("resume_from_epoch", 0)
+    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_prefix = Path(params["output_model_prefix_path"]).expanduser()
     timestamp_parent = output_prefix.parent / timestamp
@@ -181,36 +202,83 @@ def main():
     wandb_config = {
         "learning_rate": lr_params,
         "collect_stats": cs_params,
-        "training": {k: v for k, v in params.items() if k not in {"collect_stats_frequency"}}
+        "training": {k: v for k, v in params.items() if k not in {"collect_stats_frequency"}},
+        "resume_from_epoch": resume_epoch
     }
 
     wandb.init(**wandb_kwargs, config=wandb_config)
 
     # ut.set_default_device("cuda")
 
-    model = mm.DecoratorModel.load_from_file(params["input_model_path"])
+    # Load model from checkpoint if resuming
+    training_state = None
+    if resume_epoch > 0:
+        checkpoint_path = "{}.{}.pt".format(params["input_model_path"].rsplit('.', 1)[0], resume_epoch)
+        LOG.info("Resuming from epoch %d, loading model from %s", resume_epoch, checkpoint_path)
+        model = mm.DecoratorModel.load_from_file(checkpoint_path)
+        
+        # Try to load training state
+        state_path = "{}.{}.state.pt".format(params["input_model_path"].rsplit('.', 1)[0], resume_epoch)
+        if Path(state_path).exists():
+            training_state = torch.load(state_path)
+            LOG.info("Loaded training state from %s", state_path)
+            LOG.info("  Best validation loss: %s", training_state.get('best_validation_loss'))
+            LOG.info("  Epochs without improvement: %d", training_state.get('epochs_without_improvement', 0))
+        else:
+            LOG.warning("Training state file not found at %s, using command-line arguments or defaults", state_path)
+    else:
+        model = mm.DecoratorModel.load_from_file(params["input_model_path"])
+    
     optimizer = torch.optim.Adam(model.network.parameters(), lr=lr_params["start"])
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=lr_params["step"], gamma=lr_params["gamma"])
+    
+    # Advance lr_scheduler to the correct epoch
+    if resume_epoch > 0:
+        for _ in range(resume_epoch):
+            lr_scheduler.step()
+        LOG.info("Learning rate adjusted to %.6e after %d epochs", lr_scheduler.get_last_lr()[0], resume_epoch)
 
     training_sets = load_sets(params["training_set_path"])
     validation_sets = []
     if params["collect_stats_frequency"] > 0:
         validation_sets = load_sets(cs_params["validation_set_path"])
+    
+    # Advance iterators to match the resume epoch
+    if resume_epoch > 0:
+        LOG.info("Advancing dataset iterators by %d epochs", resume_epoch)
+        for _ in range(resume_epoch):
+            next(training_sets)
+            if validation_sets:
+                next(validation_sets)
 
     global_step = 0
+    
+    # Extract training state for resuming
+    initial_best_loss = None
+    initial_epochs_without_improvement = 0
+    
+    if training_state:
+        initial_best_loss = training_state.get('best_validation_loss')
+        initial_epochs_without_improvement = training_state.get('epochs_without_improvement', 0)
+    else:
+        # Fallback to command-line arguments
+        initial_best_loss = params.get("resume_best_validation_loss")
+        initial_epochs_without_improvement = params.get("resume_epochs_without_improvement", 0)
 
     post_epoch_hook = TrainModelPostEpochHook(
         params["output_model_prefix_path"], params["epochs"], validation_sets, lr_scheduler,
         cs_params, lr_params, collect_stats_frequency=params["collect_stats_frequency"],
         save_frequency=params["save_every_n_epochs"], logger=LOG,
-        global_step_fn=lambda: global_step
+        global_step_fn=lambda: global_step,
+        initial_best_loss=initial_best_loss,
+        initial_epochs_without_improvement=initial_epochs_without_improvement
     )
 
     epochs_it = ma.TrainModel(model, optimizer, training_sets, params["batch_size"], params["clip_gradients"],
                               params["epochs"], post_epoch_hook, logger=LOG,
                               grad_accum_steps=params.get("grad_accum_steps", 1)).run()
     try:
-        for epoch_num, (total, epoch_it) in enumerate(epochs_it, start=1):
+        for epoch_num, (total, epoch_it) in enumerate(epochs_it, start=1+resume_epoch):
             batch_bar = tqdm(epoch_it, total=total, desc=f"#{epoch_num}", unit="batch")
             for batch_idx, loss in enumerate(batch_bar):
                 loss_value = float(loss.item()) if hasattr(loss, "item") else float(loss)
@@ -314,6 +382,15 @@ def _add_base_args(parser):
                         type=str, default="transfer_learning")
     parser.add_argument("--wandb-run-name",
                         help="Optional custom run name for Weights & Biases logging.", type=str, default="transfer_learning_run")
+    parser.add_argument("--resume-from-epoch", "--rfe",
+                        help="Resume training from a completed epoch (e.g., 11 means epoch 11 is done, start from epoch 12). [DEFAULT: 0 (start from beginning)]",
+                        type=int, default=0)
+    parser.add_argument("--resume-best-validation-loss", "--rbvl",
+                        help="Best validation loss from previous training (only used if state file not found). [DEFAULT: None]",
+                        type=float, default=None)
+    parser.add_argument("--resume-epochs-without-improvement", "--rewi",
+                        help="Number of epochs without improvement from previous training (only used if state file not found). [DEFAULT: 0]",
+                        type=int, default=0)
 
 
 if __name__ == "__main__":
