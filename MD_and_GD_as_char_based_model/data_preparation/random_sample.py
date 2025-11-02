@@ -155,12 +155,14 @@ class RandomSampling:
         total_scores = score_summary.total_score
         component_scores = score_summary.component_scores
 
+        scored_smiles = getattr(score_summary, "scored_smiles", []) or []
+
         for idx, seq in enumerate(sampled_sequences):
             record: Dict[str, Any] = {
                 "step": step,
                 "scaffold": seq.scaffold,
                 "decoration": seq.decoration,
-                "smiles": f"{seq.scaffold}|{seq.decoration}",
+                "smiles": scored_smiles[idx] if idx < len(scored_smiles) else "INVALID",
                 "nll": seq.nll,
                 "total_score": total_scores[idx] if idx < len(total_scores) else 0.0,
             }
