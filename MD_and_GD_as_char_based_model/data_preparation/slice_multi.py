@@ -218,11 +218,11 @@ def parse_args():
     parser.add_argument("--input-smiles-path", "-i",
                         help="Path to the input file with molecules in SMILES notation.", type=str, default="./data/our_test/test.smi")
     parser.add_argument("--output-parquet-folder", "-o",
-                        help="Path to the output Apache Parquet folder.", type=str, default="./data/our_test/our_smiles_recap_cuts_4_test")
+                        help="Path to the output Apache Parquet folder.", type=str, default="./data/our_test/our_smiles_recap_cuts_8_test")
     parser.add_argument("--output-smiles-path", "-u",
-                        help="Path to the output SMILES file.", type=str, default="./data/our_test/our_smiles_recap_cuts_4_test.tsv")
+                        help="Path to the output SMILES file.", type=str, default="./data/our_test/our_smiles_recap_cuts_8_test.tsv")
     parser.add_argument("--max-cuts", "-c",
-                        help="Maximum number of cuts to attempts for each molecule [DEFAULT: 4]", type=int, default=4)
+                        help="Maximum number of cuts to attempts for each molecule [DEFAULT: 4]", type=int, default=8)
     parser.add_argument("--slice-type", "-s",
                         help="Kind of slicing performed TYPES=(recap, hr) [DEFAULT: hr]", type=str, default="recap")
     parser.add_argument("--conditions-file", "-f",

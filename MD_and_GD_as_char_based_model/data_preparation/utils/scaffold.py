@@ -464,6 +464,6 @@ def convert_to_rdkit_smiles(smiles: str, allowTautomers=True, sanitize=False, is
     :type allowTautomers: allows having same molecule represented in different tautomeric forms
     """
     if allowTautomers:
-        return MolToSmiles(MolFromSmiles(smiles, sanitize=sanitize), isomericSmiles=isomericSmiles)
+        return MolToSmiles(MolFromSmiles(smiles, sanitize=sanitize), isomericSmiles=isomericSmiles,canonical=True)
     else:
         return MolStandardize.canonicalize_tautomer_smiles(smiles)

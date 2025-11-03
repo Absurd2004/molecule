@@ -149,6 +149,7 @@ def compute_top_n_cumulative_mean(
 	top_n: int,
 	step_start: float,
 	step_end: float,
+	bias: float = 0.0,
 	step_col: str = "Step",
 	value_col: str = "st_gap_raw",
 	smiles_col: str = "SMILES",
@@ -197,7 +198,9 @@ def compute_top_n_cumulative_mean(
 			current_step = step_value
 
 		existing_score = best_scores.get(smiles_value)
-		numeric_score = float(score_value)
+		numeric_score = float(score_value) + bias
+		#if numeric_score < 0.0:
+			#numeric_score = 0.0
 		if existing_score is None or numeric_score < existing_score:
 			best_scores[smiles_value] = numeric_score
 
@@ -247,6 +250,22 @@ def plot_curves(
 			label=curve.label,
 		)
 
+	# Shade the first grid column to help delineate sections.
+	# We derive the grid boundaries from the x-ticks (after plotting so Matplotlib has them ready).
+	x_ticks = ax.get_xticks()
+	if len(x_ticks) >= 2:
+		x_min = ax.get_xlim()[0]
+		x_next = x_ticks[1]
+		x_right = min(x_next, ax.get_xlim()[1])
+		y_bottom, y_top = ax.get_ylim()
+		ax.axvspan(
+			x_min,
+			x_right,
+			facecolor=(0.9, 0.9, 0.9, 0.5),
+			edgecolor="none",
+			zorder=0.5,
+		)
+
 	ax.set_xlabel("Step", fontsize=12)
 	ax.set_ylabel(f"Mean of top {top_n} st_gap_raw", fontsize=12)
 	if title:
@@ -267,12 +286,18 @@ def plot_curves(
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Plot cumulative top-n st_gap_raw trends")
-	parser.add_argument("--config", required=True, type=Path, help="Path to JSON or YAML config file")
-	parser.add_argument("--top-n", required=True, type=int, help="Number of best molecules to average")
+	parser.add_argument("--config", type=Path, default= Path("./configs/est_trend.json"),help="Path to JSON or YAML config file")
+	parser.add_argument("--top-n",  type=int, default = 50,help="Number of best molecules to average")
+	parser.add_argument(
+		"--bias",
+		type=float,
+		default=0.18,
+		help="Bias added to each st_gap_raw value before processing (default: 0.0)",
+	)
 	parser.add_argument(
 		"--output",
 		type=Path,
-		default=None,
+		default= "./rl_runs/pic16_est_trend/est_trend.png",
 		help="Optional path to save the figure. If omitted, the plot is shown interactively.",
 	)
 	parser.add_argument("--title", type=str, default=None, help="Optional title for the chart")
@@ -313,6 +338,7 @@ def main() -> None:
 			top_n=args.top_n,
 			step_start=curve.step_start,
 			step_end=curve.step_end,
+			bias=args.bias,
 			step_col=args.step_column,
 			value_col=args.value_column,
 			smiles_col=args.smiles_column,
