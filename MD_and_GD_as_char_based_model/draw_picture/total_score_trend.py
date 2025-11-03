@@ -1,13 +1,13 @@
-"""Utility for plotting top-n st_gap_raw trends across multiple CSV files.
+"""Utility for plotting top-n total_score trends across multiple CSV files.
 
 The script expects one or more CSV files that each contain the columns:
 	- ``Step``: numeric step indicator
 	- ``SMILES``: molecule identifier string
-	- ``st_gap_raw``: numeric score
+	- ``total_score``: numeric score
 
 For every CSV we produce one line on the chart. Each line represents, for every
-step within a user-provided range, the mean value of the smallest ``n``
-``st_gap_raw`` scores observed so far (from the beginning of the selected step
+step within a user-provided range, the mean value of the largest ``n``
+``total_score`` scores observed so far (from the beginning of the selected step
 range up to the current step). When fewer than ``n`` unique molecules have been
 seen, the point is left blank (NaN).
 
@@ -19,20 +19,20 @@ Usage example (JSON configuration)::
 		  "csv": "run_a.csv",
 		  "label": "Run A",
 		  "step_range": [0, 5000],
-		  "color": [220, 20, 60]
+		  "color": [30, 144, 255]
 		},
 		{
 		  "csv": "run_b.csv",
 		  "label": "Run B",
 		  "step_range": [1000, 6000],
-		  "color": [72, 61, 139]
+		  "color": [0, 191, 165]
 		}
 	  ]
 	}
 
 Command line::
 
-	python est_trend.py --top-n 10 --config config.json --output trend.png
+	python total_score_trend.py --top-n 10 --config config.json --output trend.png
 
 Config files with extensions ``.json`` as well as ``.yaml``/``.yml`` are
 accepted. YAML support requires PyYAML to be installed.
@@ -51,7 +51,7 @@ try:
 	import matplotlib.pyplot as plt  # type: ignore[import]
 except ModuleNotFoundError as exc:  # pragma: no cover - import guard
 	raise ModuleNotFoundError(
-		"matplotlib is required to run est_trend.py. Please install it via 'pip install matplotlib'."
+		"matplotlib is required to run total_score_trend.py. Please install it via 'pip install matplotlib'."
 	) from exc
 
 import numpy as np
@@ -60,7 +60,7 @@ try:
 	import pandas as pd  # type: ignore[import]
 except ModuleNotFoundError as exc:  # pragma: no cover - import guard
 	raise ModuleNotFoundError(
-		"pandas is required to run est_trend.py. Please install it via 'pip install pandas'."
+		"pandas is required to run total_score_trend.py. Please install it via 'pip install pandas'."
 	) from exc
 
 
@@ -151,14 +151,14 @@ def compute_top_n_cumulative_mean(
 	step_end: float,
 	bias: float = 0.0,
 	step_col: str = "Step",
-	value_col: str = "st_gap_raw",
+	value_col: str = "total_score",
 	smiles_col: str = "SMILES",
 ) -> pd.DataFrame:
 	"""Return DataFrame with cumulative mean of top-n values for each step.
 
 	The computation iterates through the rows ordered by ``Step`` and keeps the
-	best (minimum) ``st_gap_raw`` encountered so far for every unique ``SMILES``.
-	For each step we calculate the mean of the ``n`` smallest scores seen up to
+	best (maximum) ``total_score`` encountered so far for every unique ``SMILES``.
+	For each step we calculate the mean of the ``n`` largest scores seen up to
 	that point. Points with fewer than ``n`` unique molecules are represented as
 	``NaN`` so that they don't show up on the line.
 	"""
@@ -176,10 +176,9 @@ def compute_top_n_cumulative_mean(
 	scoped.sort_values(step_col, inplace=True)
 
 	steps: List[float] = []
-	means: List[float] = []
+	top_means: List[float] = []
 	best_scores: dict[str, float] = {}
 
-	# Iterate efficiently: keep running pointer instead of re-filtering group each time.
 	current_step: Optional[float] = None
 	for row in scoped.itertuples(index=False):
 		step_value = getattr(row, step_col)
@@ -187,29 +186,24 @@ def compute_top_n_cumulative_mean(
 		score_value = getattr(row, value_col)
 
 		if pd.isna(step_value) or pd.isna(score_value) or isinstance(score_value, str):
-			# Skip invalid rows gracefully.
 			continue
 
 		if current_step is None:
 			current_step = step_value
 
 		if step_value != current_step:
-			_update_summary(current_step, best_scores, top_n, steps, means)
+			_update_summary(current_step, best_scores, top_n, steps, top_means)
 			current_step = step_value
 
 		existing_score = best_scores.get(smiles_value)
-		numeric_score = float(score_value)
-		if numeric_score < -0.13:
-			numeric_score = -0.13
-		numeric_score += bias
-		
-		if existing_score is None or numeric_score < existing_score:
+		numeric_score = float(score_value) + bias
+		if existing_score is None or numeric_score > existing_score:
 			best_scores[smiles_value] = numeric_score
 
 	if current_step is not None:
-		_update_summary(current_step, best_scores, top_n, steps, means)
+		_update_summary(current_step, best_scores, top_n, steps, top_means)
 
-	return pd.DataFrame({step_col: steps, "top_n_mean": means})
+	return pd.DataFrame({step_col: steps, "top_n_mean": top_means})
 
 
 def _update_summary(
@@ -226,8 +220,10 @@ def _update_summary(
 		means.append(math.nan)
 		return
 
-	smallest_scores = np.partition(np.fromiter(best_scores.values(), dtype=float), top_n - 1)[:top_n]
-	means.append(float(np.mean(smallest_scores)))
+	values = np.fromiter(best_scores.values(), dtype=float)
+	partition_index = len(values) - top_n
+	largest_scores = np.partition(values, partition_index)[partition_index:]
+	means.append(float(np.mean(largest_scores)))
 
 
 def plot_curves(
@@ -252,15 +248,11 @@ def plot_curves(
 			label=curve.label,
 		)
 
-	# Shade the first grid column to help delineate sections.
-	# Use the actual visible x-axis minimum and find the first tick greater than it.
 	orig_xlim = ax.get_xlim()
 	x_min, x_max = orig_xlim
 	x_ticks = ax.get_xticks()
-	# Filter ticks to only those within the visible range and greater than x_min
 	valid_ticks = [tick for tick in x_ticks if tick > x_min and tick <= x_max]
 	if valid_ticks:
-		# Use the first valid tick as the right boundary
 		x_right = valid_ticks[0]
 		ax.axvspan(
 			x_min,
@@ -269,11 +261,10 @@ def plot_curves(
 			edgecolor="none",
 			zorder=0.5,
 		)
-		# Restore the original x-limits to prevent the patch from expanding the view.
 		ax.set_xlim(orig_xlim)
 
 	ax.set_xlabel("Step", fontsize=12)
-	ax.set_ylabel(f"Mean of top {top_n} st_gap_raw", fontsize=12)
+	ax.set_ylabel(f"Mean of top {top_n} total_score", fontsize=12)
 	if title:
 		ax.set_title(title, fontsize=14)
 
@@ -285,25 +276,26 @@ def plot_curves(
 	fig.tight_layout()
 
 	if output_path:
+		output_path.parent.mkdir(parents=True, exist_ok=True)
 		fig.savefig(output_path, dpi=300)
 	else:
 		plt.show()
 
 
 def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(description="Plot cumulative top-n st_gap_raw trends")
-	parser.add_argument("--config", type=Path, default= Path("./configs/est_trend.json"),help="Path to JSON or YAML config file")
-	parser.add_argument("--top-n",  type=int, default = 50,help="Number of best molecules to average")
+	parser = argparse.ArgumentParser(description="Plot cumulative top-n total_score trends")
+	parser.add_argument("--config", type=Path, default=Path("./configs/total_score_trend.json"), help="Path to JSON or YAML config file")
+	parser.add_argument("--top-n", type=int, default=50, help="Number of best molecules to average")
 	parser.add_argument(
 		"--bias",
 		type=float,
-		default=0.18,
-		help="Bias added to each st_gap_raw value before processing (default: 0.0)",
+		default=0.0,
+		help="Bias added to each total_score value before processing (default: 0.0)",
 	)
 	parser.add_argument(
 		"--output",
 		type=Path,
-		default= "./rl_runs/pic16_est_trend/est_trend.png",
+		default=Path("./rl_runs/total_score_trend/total_score_trend.png"),
 		help="Optional path to save the figure. If omitted, the plot is shown interactively.",
 	)
 	parser.add_argument("--title", type=str, default=None, help="Optional title for the chart")
@@ -316,8 +308,8 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--value-column",
 		type=str,
-		default="st_gap_raw",
-		help="Name of the value column to minimize (default: st_gap_raw)",
+		default="total_score",
+		help="Name of the value column to maximize (default: total_score)",
 	)
 	parser.add_argument(
 		"--smiles-column",
@@ -359,7 +351,5 @@ def main() -> None:
 		step_col=args.step_column,
 		title=args.title,
 	)
-
-
 if __name__ == "__main__":
 	main()
