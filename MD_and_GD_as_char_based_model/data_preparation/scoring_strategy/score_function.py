@@ -227,13 +227,25 @@ def multiple_score(
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
             continue
-        formal_charge = Chem.GetFormalCharge(mol)
-        if formal_charge == 0:
-            charge_scores[idx] = 0.0
-        elif formal_charge % 2 == 0:
-            charge_scores[idx] = 1.0
+
+        decoration_parts = [part for part in (decoration or "").split("|") if part]
+        if len(decoration_parts) == 1:
+            pos_charge = any(atom.GetFormalCharge() > 0 for atom in mol.GetAtoms())
+            neg_charge = any(atom.GetFormalCharge() < 0 for atom in mol.GetAtoms())
+            if pos_charge and neg_charge:
+                charge_scores[idx] = 1.0
+            elif pos_charge or neg_charge:
+                charge_scores[idx] = 0.5
+            else:
+                charge_scores[idx] = 0.0
         else:
-            charge_scores[idx] = 0.5
+            formal_charge = Chem.GetFormalCharge(mol)
+            if formal_charge == 0:
+                charge_scores[idx] = 0.0
+            elif formal_charge % 2 == 0:
+                charge_scores[idx] = 1.0
+            else:
+                charge_scores[idx] = 0.5
         symmetry_scores[idx] = _decoration_pair_reward(decoration)
         if _decoration_exceeds_ring_threshold(decoration):
             ring_penalty_mask[idx] = True
