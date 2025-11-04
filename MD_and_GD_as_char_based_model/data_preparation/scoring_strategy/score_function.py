@@ -164,6 +164,20 @@ def _decoration_pair_reward(decoration: str) -> float:
         if cluster_sizes == [1, 1, 2]:
             return 0.25
         return 0.0
+    if len(parts) == 6:
+        pair_indices = [(0, 3), (1, 4), (2, 5)]
+        pair_matches = [
+            1 if _is_identical(fps[first], fps[second]) else 0
+            for first, second in pair_indices
+        ]
+        match_count = sum(pair_matches)
+        if match_count == 3:
+            return 1.0
+        if match_count == 2:
+            return 0.5
+        if match_count == 1:
+            return 0.25
+        return 0.0
     if cluster_sizes == [2, 2]:
         return 1.0
     return 0.0

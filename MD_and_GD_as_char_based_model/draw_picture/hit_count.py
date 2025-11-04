@@ -228,10 +228,19 @@ def compute_time_to_hits(
 	return results
 
 
+
+def _format_threshold_label(threshold: int) -> str:
+	"""Return a human-friendly label for a hit threshold."""
+
+	if threshold == 1:
+		return "Time-to-first-hit"
+	return f"Time-to-{threshold}-hits"
+
+
 def plot_curves(
 	curves: Sequence[CurveSpec],
 	datasets: Sequence[pd.DataFrame],
-	time_to_hits: Sequence[Optional[float]],
+	time_to_hits_per_curve: Sequence[Sequence[Optional[float]]],
 	hit_thresholds: Sequence[int],
 	output_path: Optional[Path],
 	step_col: str,
@@ -275,34 +284,56 @@ def plot_curves(
 	ax.spines["top"].set_visible(False)
 	ax.spines["right"].set_visible(False)
 
-	ax.legend()
+	ax.legend(loc="upper left", frameon=False)
 	fig.tight_layout()
 
 	# Inset bar chart for time-to-hit metrics.
-	if hit_thresholds:
+	if hit_thresholds and time_to_hits_per_curve:
 		inset_ax = inset_axes(
 			ax,
-			width="38%",
-			height="34%",
+			width="19%",
+			height="17%",
 			loc="lower right",
 			borderpad=0.8,
 		)
 
-		label_texts: List[str] = []
-		for threshold in hit_thresholds:
-			if threshold == 1:
-				label_texts.append("Time-to-first-hit")
-			else:
-				label_texts.append(f"Time-to-{threshold}-hits")
+		ordered_indices = sorted(
+			range(len(hit_thresholds)), key=lambda idx: hit_thresholds[idx], reverse=True
+		)
+		n_curves = len(curves)
+		bar_height = 0.6 / max(n_curves, 1)
+		group_gap = 0.6
 
-		available_times = [time for time in time_to_hits if time is not None]
+		positions: List[float] = []
+		values: List[float] = []
+		colors: List[Tuple[float, float, float]] = []
+		labels: List[str] = []
+		value_labels: List[Optional[float]] = []
+
+		group_centers: List[float] = []
+		group_texts: List[str] = []
+
+		for group_idx, threshold_index in enumerate(ordered_indices):
+			threshold = hit_thresholds[threshold_index]
+			base = group_idx * (n_curves + group_gap)
+			group_centers.append(base + (n_curves - 1) / 2 if n_curves > 1 else base)
+			group_texts.append(_format_threshold_label(threshold))
+
+			for curve_idx, curve in enumerate(curves):
+				y_position = base + curve_idx
+				time_value = time_to_hits_per_curve[curve_idx][threshold_index]
+				positions.append(y_position)
+				values.append(time_value if time_value is not None else 0.0)
+				colors.append(curve.color)
+				labels.append(curve.label)
+				value_labels.append(time_value)
+
+		available_times = [value for value in values if value > 0]
 		max_time = max(available_times, default=0.0)
-		values = [time if time is not None else 0.0 for time in time_to_hits]
-		positions = np.arange(len(hit_thresholds))
-		color_map = plt.get_cmap("tab20")
-		colors = [color_map(i % color_map.N) for i in range(len(hit_thresholds))]
+		x_padding = max(1.0, max_time * 0.2)
+		x_max = max_time + x_padding
 
-		bars = inset_ax.barh(positions, values, height=0.55, color=colors)
+		bars = inset_ax.barh(positions, values, height=bar_height, color=colors)
 
 		face_rgba = ax.get_facecolor()
 		soft_bg = (
@@ -314,40 +345,47 @@ def plot_curves(
 		inset_ax.patch.set_facecolor(soft_bg)
 		inset_ax.patch.set_edgecolor((0.0, 0.0, 0.0, 0.05))
 
-		inset_ax.set_xlim(0, max_time * 1.1 + (max_time * 0.05 if max_time > 0 else 1.0))
-		inset_ax.set_ylim(-0.5, len(hit_thresholds) - 0.5)
+		y_min = -bar_height
+		y_max = (len(ordered_indices) - 1) * (n_curves + group_gap) + n_curves - 1 + bar_height
+		inset_ax.set_xlim(0, x_max)
+		inset_ax.set_ylim(y_min, y_max)
 		inset_ax.set_xticks([])
 		inset_ax.set_yticks([])
 		for spine in inset_ax.spines.values():
 			spine.set_visible(False)
 
 		yaxis_transform = inset_ax.get_yaxis_transform()
-		label_offset = -0.03
-		for bar, label_text, time_value in zip(bars, label_texts, time_to_hits):
-			y_pos = bar.get_y() + bar.get_height() / 2
+		label_offset = -0.05
+		for center, text in zip(group_centers, group_texts):
 			inset_ax.text(
 				label_offset,
-				y_pos,
-				label_text,
+				center,
+				text,
 				ha="right",
 				va="center",
-				fontsize=8,
+				fontsize=7,
 				transform=yaxis_transform,
 			)
 
+		text_gap = x_padding * 0.25
+		for bar, curve_label, time_value in zip(bars, labels, value_labels):
+			y_pos = bar.get_y() + bar.get_height() / 2
+			text_value = "∞" if time_value is None else f"{time_value:.0f}"
+			display_text = f"{curve_label}: {text_value}"
 			if time_value is None:
-				text_value = "∞"
-				x_pos = inset_ax.get_xlim()[1] * 0.95
+				x_anchor = text_gap
 			else:
-				text_value = f"{time_value:.0f}"
-				x_pos = bar.get_width()
+				x_anchor = bar.get_width() + text_gap
+			x_anchor = min(x_anchor, x_max - text_gap * 0.5)
 			inset_ax.text(
-				x_pos,
+				x_anchor,
 				y_pos,
-				text_value,
+				display_text,
 				ha="left",
 				va="center",
-				fontsize=8,
+				fontsize=7,
+				color=(0.15, 0.15, 0.15, 0.95),
+				bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "none", "pad": 0.5},
 			)
 
 	if output_path:
@@ -456,20 +494,10 @@ def main() -> None:
 			compute_time_to_hits(result, args.hit_thresholds, step_col=args.step_column)
 		)
 
-	# For the inset we use the metrics from the first curve by default; if multiple
-	# curves are supplied, we take the minimum time-to-hit across curves for each threshold.
-	if not time_to_hits_per_curve:
-		aggregated_time_to_hits: List[Optional[float]] = []
-	else:
-		aggregated_time_to_hits = []
-		for idx in range(len(args.hit_thresholds)):
-			values = [curve_times[idx] for curve_times in time_to_hits_per_curve if curve_times[idx] is not None]
-			aggregated_time_to_hits.append(min(values) if values else None)
-
 	plot_curves(
 		curves=curves,
 		datasets=datasets,
-		time_to_hits=aggregated_time_to_hits,
+		time_to_hits_per_curve=time_to_hits_per_curve,
 		hit_thresholds=args.hit_thresholds,
 		output_path=args.output,
 		step_col=args.step_column,
