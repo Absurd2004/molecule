@@ -224,6 +224,18 @@ def compute_diversity_per_step(
 	if scoped.empty:
 		return pd.DataFrame(columns=[step_col, "IntDiv1", "IntDiv2"])
 
+	invalid_mask = (
+		scoped[smiles_col]
+			.astype(str)
+			.str.strip()
+			.str.upper()
+			.eq("INVALID")
+	)
+	if invalid_mask.any():
+		scoped = scoped.loc[~invalid_mask]
+	if scoped.empty:
+		return pd.DataFrame(columns=[step_col, "IntDiv1", "IntDiv2"])
+
 	cache: Dict[Tuple[str, int, int], Optional[DataStructs.cDataStructs.ExplicitBitVect]] = {}
 
 	steps: List[float] = []
@@ -266,7 +278,23 @@ def plot_curves(
 ) -> None:
 	"""Plot the computed diversity trend lines."""
 
+	plt.rcParams.update(
+		{
+			"figure.dpi": 300,
+			"savefig.dpi": 300,
+			"font.family": "sans-serif",
+			"font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans"],
+			"axes.titlesize": 14,
+			"axes.labelsize": 12,
+			"xtick.labelsize": 10,
+			"ytick.labelsize": 10,
+			"legend.fontsize": 7,
+		}
+	)
+
 	fig, ax = plt.subplots(figsize=(10, 6))
+	fig.patch.set_facecolor("#ffffff")
+	ax.set_facecolor("#ffffff")
 
 	for curve, data in zip(curves, datasets):
 		if data.empty:
@@ -293,21 +321,6 @@ def plot_curves(
 			label=f"{curve.label} IntDiv2",
 		)
 
-	orig_xlim = ax.get_xlim()
-	x_min, x_max = orig_xlim
-	x_ticks = ax.get_xticks()
-	valid_ticks = [tick for tick in x_ticks if tick > x_min and tick <= x_max]
-	if valid_ticks:
-		x_right = valid_ticks[0]
-		ax.axvspan(
-			x_min,
-			x_right,
-			facecolor=(0.9, 0.9, 0.9, 0.7),
-			edgecolor="none",
-			zorder=0.5,
-		)
-		ax.set_xlim(orig_xlim)
-
 	ax.set_xlabel("Step", fontsize=12)
 	ax.set_ylabel("Mean diversity metric", fontsize=12)
 	if title:
@@ -317,7 +330,16 @@ def plot_curves(
 	ax.spines["top"].set_visible(False)
 	ax.spines["right"].set_visible(False)
 
-	ax.legend()
+	legend = ax.legend(
+		loc="upper left",
+		bbox_to_anchor=(0.02, 0.98),
+		frameon=False,
+		borderaxespad=0.0,
+		markerscale=0.9,
+	)
+	if legend:
+		for text in legend.get_texts():
+			text.set_color("#2a2d34")
 	fig.tight_layout()
 
 	if output_path:

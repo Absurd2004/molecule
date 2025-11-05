@@ -1,16 +1,22 @@
 {
+	"reference": {
+		"csv": "./data/train/merged_smiles.csv",
+		"max_samples": 100000
+	},
 	"curves": [
 		{
 			"csv": "./rl_runs/pic16_est_trend/diversity_memory_1.csv",
 			"label": "RL",
 			"step_range": [50, 499],
-			"color": [88, 182, 233]
+			"color": [155, 187, 255],
+			"max_samples": 1000
 		},
 		{
 			"csv": "./rl_runs/pic16_est_trend/random_sampling_results.csv",
 			"label": "random sample",
 			"step_range": [50, 499],
-			"color": [128, 116, 200]
+			"color": [183, 183, 235],
+			"max_samples": 1000
 		}
 	]
 }

@@ -2,13 +2,19 @@
 	"title": "RL Run Metrics",
 	"output": "./rl_runs/diversity/radar.png",
 	"batch_size": 128,
-	"sample_size": 5096,
+	"sample_size": 2048,
 	"radars": [
 		{
+			"csv": "./rl_runs/pic16_est_trend/diversity_memory_1.csv",
 			"label": "RL",
-			"csv": "./rl_runs/pic16_est_trend/diversity_memory.csv",
 			"step_range": [50, 499],
-			"color": [65, 105, 225]
+			"color": [88, 182, 233]
+		},
+		{
+			"csv": "./rl_runs/pic16_est_trend/random_sampling_results.csv",
+			"label": "random sample",
+			"step_range": [50, 499],
+			"color": [128, 116, 200]
 		}
 	]
 }

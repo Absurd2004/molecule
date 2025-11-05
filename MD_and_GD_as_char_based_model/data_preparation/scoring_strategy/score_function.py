@@ -208,24 +208,37 @@ def multiple_score(
     """
 
     cfg = dict(config or {})
-    predictor = predictor or _get_kagnn_predictor(cfg)
-    if predictor is None:
-        raise RuntimeError("KA-GNN predictor could not be initialized")
+    if isinstance(weights, (list, tuple)):
+        weight_values = [float(w) for w in weights]
+    else:
+        weight_values = [float(weights)]
+    st_gap_weight = weight_values[0] if weight_values else 0.0
 
-    raw_scores = predictor.score(smiles_list).astype(np.float32)
-    print(f"raw_scores: {raw_scores}")
-    finite_mask = np.isfinite(raw_scores)
-
-    scale = float(cfg.get("scale", 1.0))
-    scale = max(scale, 1e-6)
-
-    normalized = np.zeros_like(raw_scores, dtype=np.float32)
-    if np.any(finite_mask):
-        gaps = np.maximum(raw_scores[finite_mask], 0.0)
-        normalized[finite_mask] = 1.0 / (1.0 + gaps / scale)
-
+    smiles_count = len(smiles_list)
     fallback = float(cfg.get("invalid_value", 0.0))
-    normalized[~finite_mask] = fallback
+
+    raw_scores = np.full(smiles_count, fallback, dtype=np.float32)
+    normalized = np.full(smiles_count, fallback, dtype=np.float32)
+    finite_mask = np.zeros(smiles_count, dtype=bool)
+
+    if st_gap_weight != 0.0:
+        predictor = predictor or _get_kagnn_predictor(cfg)
+        if predictor is None:
+            raise RuntimeError("KA-GNN predictor could not be initialized")
+
+        raw_scores = predictor.score(smiles_list).astype(np.float32)
+        finite_mask = np.isfinite(raw_scores)
+
+        scale = float(cfg.get("scale", 1.0))
+        scale = max(scale, 1e-6)
+
+        normalized = np.zeros_like(raw_scores, dtype=np.float32)
+        if np.any(finite_mask):
+            gaps = np.maximum(raw_scores[finite_mask], 0.0)
+            normalized[finite_mask] = 1.0 / (1.0 + gaps / scale)
+        normalized[~finite_mask] = fallback
+
+    print(f"raw_scores: {raw_scores}")
     print(f"normalized: {normalized}")
 
     if decorations is None:
@@ -273,14 +286,12 @@ def multiple_score(
         "st_gap_raw": np.where(finite_mask, raw_scores, fallback).astype(np.float32),
     }
 
-    weight_list = [float(w) for w in (weights if isinstance(weights, (list, tuple)) else (weights,))]
-
     weighted_sum = np.zeros_like(normalized, dtype=np.float32)
     total_weight = 0.0
     primary_components = [name for name in component_scores if not name.endswith("_raw")]
 
     for idx, name in enumerate(primary_components):
-        weight = weight_list[idx] if idx < len(weight_list) else 0.0
+        weight = weight_values[idx] if idx < len(weight_values) else 0.0
         if weight == 0.0:
             continue
         weighted_sum += weight * component_scores[name]

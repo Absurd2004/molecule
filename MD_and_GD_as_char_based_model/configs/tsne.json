@@ -1,0 +1,23 @@
+{
+	"datasets": [
+		{
+			"csv": "./data/train/merged_smiles.csv",
+			"label": "training data",
+			"color": [157, 158, 163],
+			"max_samples": 20000,
+			"alpha": 0.92
+		},
+		{
+			"csv": "./rl_runs/pic16_est_trend/diversity_memory_1.csv",
+			"label": "RL",
+			"color": [88, 182, 233],
+			"max_samples": 2000
+		},
+		{
+			"csv": "./rl_runs/pic16_est_trend/random_sampling_results.csv",
+			"label": "random sample",
+			"color": [128, 116, 200],
+			"max_samples": 2000
+		}
+	]
+}

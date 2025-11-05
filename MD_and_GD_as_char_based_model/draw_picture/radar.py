@@ -206,13 +206,19 @@ def _compute_intdiv(
 	return float(intdiv1), float(intdiv2)
 
 
-def _extract_decorations(scaffold: str) -> List[str]:
-	"""Split the scaffold string into decoration fragments (excluding core)."""
+def _extract_scaffold_decorations(source: str) -> List[str]:
+	"""Split a scaffold string and drop the first core fragment."""
 
-	parts = str(scaffold).split("|")
+	parts = [fragment.strip() for fragment in str(source).split("|") if fragment.strip()]
 	if len(parts) <= 1:
 		return []
-	return [fragment.strip() for fragment in parts[1:] if fragment.strip()]
+	return parts[1:]
+
+
+def _extract_decoration_fragments(source: str) -> List[str]:
+	"""Split a decoration field retaining all fragments."""
+
+	return [fragment.strip() for fragment in str(source).split("|") if fragment.strip()]
 
 
 def _mean_or_nan(values: Sequence[float]) -> float:
@@ -242,7 +248,20 @@ def compute_metrics(
 ) -> Dict[str, float]:
 	"""Compute the six radar metrics for a given dataset."""
 
-	required_columns = {step_col, smiles_col, scaffold_col}
+	column_lookup = {column.lower(): column for column in df.columns}
+	if scaffold_col in df.columns:
+		decoration_source_col = scaffold_col
+		decoration_splitter = _extract_scaffold_decorations
+	else:
+		decoration_fallback = column_lookup.get("decoration")
+		if decoration_fallback is None:
+			raise ValueError(
+				f"CSV '{spec.csv}' must contain either '{scaffold_col}' or 'decoration' column"
+			)
+		decoration_source_col = decoration_fallback
+		decoration_splitter = _extract_decoration_fragments
+
+	required_columns = {step_col, smiles_col, decoration_source_col}
 	missing_columns = required_columns.difference(df.columns)
 	if missing_columns:
 		raise ValueError(
@@ -252,6 +271,7 @@ def compute_metrics(
 	mask = (df[step_col] >= spec.step_start) & (df[step_col] <= spec.step_end)
 	scoped = df.loc[mask].copy()
 	scoped = scoped.dropna(subset=[smiles_col])
+	scoped = scoped[scoped[smiles_col].astype(str).str.strip().str.upper() != "INVALID"]
 	scoped = scoped.reset_index(drop=True)
 
 	valid_count = len(scoped)
@@ -276,8 +296,8 @@ def compute_metrics(
 
 	# Decoration uniqueness and diversity from the sampled subset
 	by_site: Dict[int, List[str]] = defaultdict(list)
-	for scaffold in sampled[scaffold_col].dropna():
-		for idx, decoration in enumerate(_extract_decorations(scaffold)):
+	for scaffold in sampled[decoration_source_col].dropna():
+		for idx, decoration in enumerate(decoration_splitter(scaffold)):
 			by_site[idx].append(decoration)
 
 	dec_unique_values: List[float] = []
@@ -316,7 +336,7 @@ def plot_radar(
 	angles = np.linspace(0, 2 * np.pi, n_metrics, endpoint=False)
 	angles = np.concatenate([angles, angles[:1]])
 
-	fig, ax = plt.subplots(figsize=(8, 8), subplot_kw={"projection": "polar"})
+	fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": "polar"})
 
 	max_value = 0.0
 	for spec, metrics in zip(specs, metrics_map):
@@ -328,10 +348,30 @@ def plot_radar(
 	max_value = max(max_value, 1.0)
 	ax.set_ylim(0, max_value)
 	ax.set_xticks(angles[:-1])
-	ax.set_xticklabels(METRIC_ORDER)
+	ax.set_xticklabels(METRIC_ORDER, fontsize=13)
+	ax.set_yticks([])
+	ax.set_yticklabels([])
+	ax.spines["polar"].set_visible(False)
+	ax.grid(False)
+
 	levels = np.linspace(0, max_value, num=5, endpoint=True)
-	ax.set_yticks(levels)
-	ax.set_yticklabels([f"{tick:.2f}" for tick in levels], color="gray")
+	base_angles = angles[:-1]
+	for level in levels[1:]:
+		hexagon = np.append([level] * n_metrics, level)
+		ax.plot(angles, hexagon, color="#bfc5d2", linewidth=0.8, zorder=1)
+		ax.fill(angles, hexagon, color="#f3f5f9", alpha=0.08, zorder=0)
+		if n_metrics % 2 == 0:
+			half = n_metrics // 2
+			for idx in range(half):
+				start_angle = base_angles[idx]
+				end_angle = base_angles[idx + half]
+				ax.plot(
+					[start_angle, end_angle],
+					[level, level],
+					color="#d6dbe7",
+					linewidth=0.6,
+					zorder=1,
+				)
 
 	for spec, metrics in zip(specs, metrics_map):
 		values = [metrics.get(metric, float("nan")) for metric in METRIC_ORDER]
@@ -339,9 +379,6 @@ def plot_radar(
 		filled = np.append(filled, filled[0])
 		ax.plot(angles, filled, color=spec.color, linewidth=2, label=spec.label)
 		ax.fill(angles, filled, color=spec.color, alpha=0.2)
-
-	if title:
-		ax.set_title(title, fontsize=14, pad=20)
 
 	ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
 	fig.tight_layout()

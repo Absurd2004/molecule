@@ -236,32 +236,51 @@ def plot_curves(
 ) -> None:
 	"""Plot the computed trend lines."""
 
+	plt.rcParams.update(
+		{
+			"figure.dpi": 300,
+			"savefig.dpi": 300,
+			"font.family": "sans-serif",
+			"font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans"],
+			"axes.titlesize": 14,
+			"axes.labelsize": 12,
+			"xtick.labelsize": 10,
+			"ytick.labelsize": 10,
+			"legend.fontsize": 16,
+		}
+	)
+
 	fig, ax = plt.subplots(figsize=(10, 6))
+	fig.patch.set_facecolor("#ffffff")
+	ax.set_facecolor("#ffffff")
+
+	def _lighten(color: Tuple[float, float, float], factor: float = 0.6) -> Tuple[float, float, float]:
+		base = np.array(color)
+		return tuple(np.clip(base + (1.0 - base) * factor, 0.0, 1.0))
 
 	for curve, data in zip(curves, datasets):
+		y_values = data["top_n_mean"]
+		finite_mask = np.isfinite(y_values)
+		fill_color = _lighten(curve.color, 0.1)
+		ax.fill_between(
+			data[step_col],
+			y_values,
+			y2=float(np.nanmin(y_values[finite_mask])) if np.any(finite_mask) else 0.0,
+			color=fill_color,
+			alpha=0.22,
+			linewidth=0,
+			where=finite_mask,
+		)
 		ax.plot(
 			data[step_col],
 			data["top_n_mean"],
 			color=curve.color,
-			linewidth=1.5,
+			linewidth=2.6,
 			linestyle="-",
+			solid_capstyle="round",
+			solid_joinstyle="round",
 			label=curve.label,
 		)
-
-	orig_xlim = ax.get_xlim()
-	x_min, x_max = orig_xlim
-	x_ticks = ax.get_xticks()
-	valid_ticks = [tick for tick in x_ticks if tick > x_min and tick <= x_max]
-	if valid_ticks:
-		x_right = valid_ticks[0]
-		ax.axvspan(
-			x_min,
-			x_right,
-			facecolor=(0.9, 0.9, 0.9, 0.7),
-			edgecolor="none",
-			zorder=0.5,
-		)
-		ax.set_xlim(orig_xlim)
 
 	ax.set_xlabel("Step", fontsize=12)
 	ax.set_ylabel(f"Mean of top {top_n} total_score", fontsize=12)
@@ -285,7 +304,7 @@ def plot_curves(
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Plot cumulative top-n total_score trends")
 	parser.add_argument("--config", type=Path, default=Path("./configs/total_score_trend.json"), help="Path to JSON or YAML config file")
-	parser.add_argument("--top-n", type=int, default=50, help="Number of best molecules to average")
+	parser.add_argument("--top-n", type=int, default=200, help="Number of best molecules to average")
 	parser.add_argument(
 		"--bias",
 		type=float,
