@@ -178,6 +178,27 @@ def _decoration_pair_reward(decoration: str) -> float:
         if match_count == 1:
             return 0.25
         return 0.0
+    if len(parts) == 8:
+        def _group_identical(indices: List[int]) -> bool:
+            base = fps[indices[0]]
+            return all(_is_identical(base, fps[i]) for i in indices[1:])
+
+        group_0145 = _group_identical([0, 1, 4, 5])
+        group_2367 = _group_identical([2, 3, 6, 7])
+        pair_01 = _group_identical([0, 1])
+        pair_23 = _group_identical([2, 3])
+        pair_45 = _group_identical([4, 5])
+        pair_67 = _group_identical([6, 7])
+
+        if group_0145 and group_2367:
+            return 1.0
+        if group_0145 and pair_23 and pair_67:
+            return 0.5
+        if group_2367 and pair_01 and pair_45:
+            return 0.5
+        if pair_01 and pair_23 and pair_45 and pair_67:
+            return 0.25
+        return 0.0
     if cluster_sizes == [2, 2]:
         return 1.0
     return 0.0

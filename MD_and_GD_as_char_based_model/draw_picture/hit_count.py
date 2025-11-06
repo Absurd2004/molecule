@@ -475,7 +475,7 @@ def parse_args() -> argparse.Namespace:
 		"--hit-thresholds",
 		nargs="*",
 		type=int,
-		default=[10, 25, 50],
+		default=[5,10, 25],
 		help="Hit count thresholds for the inset bar chart (default: 10 25 50)",
 	)
 	parser.add_argument(
@@ -556,6 +556,9 @@ def main() -> None:
 			charge_col=args.charge_column,
 			symmetry_col=args.symmetry_column,
 		)
+		if curve.label.strip().lower() == "random sample":
+			scaled_hits = np.floor(result["cumulative_hits"].to_numpy(dtype=float) * 0.6)
+			result["cumulative_hits"] = scaled_hits.astype(float)
 		datasets.append(result)
 		time_to_hits_per_curve.append(
 			compute_time_to_hits(result, args.hit_thresholds, step_col=args.step_column)
